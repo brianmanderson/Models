@@ -251,7 +251,10 @@ class Unet(object):
     def atrous_block(self, output_size, x, name, rate_blocks=5): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         rates = []
-        # if x.shape[-1] != output_size:
+        get_new = True
+        if x.shape[-1] == output_size:
+            input_val = x
+            get_new = False
         #     x = input_val = self.conv_block(output_size, x=x, name=name + 'Atrous_' + 'rescale_input', activate=True,
         #                                     filters=self.filters)
         # else:
@@ -270,7 +273,7 @@ class Unet(object):
             if i == len(rates)-1:
                 x = Add()([x,input_val])
             x = Activation(self.activation)(x)
-            if i == 0:
+            if i == 0 and get_new:
                 input_val = x
             if self.batch_norm:
                 x = BatchNormalization()(x)
