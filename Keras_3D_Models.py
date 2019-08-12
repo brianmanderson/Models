@@ -4,6 +4,7 @@ from keras.layers import Dense, Flatten, AveragePooling3D, Reshape, Cropping3D, 
 from keras.initializers import RandomNormal
 from keras.models import load_model
 from functools import partial, update_wrapper
+from keras.utils import conv_utils
 
 
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
@@ -217,6 +218,12 @@ class Unet(object):
     def conv_block(self,output_size,x, name, strides=1, dialation_rate=1, activate=True,filters=None):
         if not filters:
             filters = self.filters
+        if len(filters) + 1 == len(x.shape):
+            self.define_2D_or_3D(is_2D=False)
+            x = ExpandDimension(0)(x)
+        elif len(filters) + 2 < len(x.shape):
+            self.define_2D_or_3D(True)
+            x = SqueezeDimension(0)(x)
         if not self.save_memory:
             x = self.conv(output_size, filters, activation=None, padding=self.padding,
                        name=name, strides=strides, dilation_rate=dialation_rate)(x)
@@ -382,6 +389,9 @@ class Unet(object):
                     self.define_2D_or_3D(is_2D=False)
                     x = ExpandDimension(0)(x)
                     rescale = True
+                elif len(filter_vals[i]) + 1 > len(x.shape):
+                    self.define_2D_or_3D(True)
+                    x = SqueezeDimension(0)(x)
             strides = 1
             if rescale:
                 self.desc = desc + '3D_' + str(i)
@@ -395,9 +405,9 @@ class Unet(object):
                 x = self.atrous_block(all_filters[i],x=x,name=self.desc,rate_blocks=atrous_blocks[i])
             else:
                 x = self.conv_block(all_filters[i], x=x, strides=strides, name=self.desc)
-        if rescale:
-            x = SqueezeDimension(0)(x)
-            self.define_2D_or_3D(is_2D=True)
+        # if rescale:
+        #     x = SqueezeDimension(0)(x)
+        #     self.define_2D_or_3D(is_2D=True)
         return x
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
@@ -776,16 +786,73 @@ class my_3D_UNet_total_skip(object):
 
         self.model = Model(inputs=[inputs], outputs=[x],name='3D_Pyramidal_UNet')
 
+class BilinearUpsampling(Layer):
+    """Just a simple bilinear upsampling layer. Works only with TF.
+       Args:
+           upsampling: tuple of 2 numbers > 0. The upsampling ratio for h and w
+           output_size: used instead of upsampling arg if passed!
+    """
+
+    def __init__(self, upsampling=(2, 2), output_size=None, data_format=None, **kwargs):
+
+        super(BilinearUpsampling, self).__init__(**kwargs)
+
+        self.data_format = K.normalize_data_format(data_format)
+        self.input_spec = InputSpec(ndim=4)
+        if output_size:
+            self.output_size = conv_utils.normalize_tuple(
+                output_size, 2, 'output_size')
+            self.upsampling = None
+        else:
+            self.output_size = None
+            self.upsampling = conv_utils.normalize_tuple(
+                upsampling, 2, 'upsampling')
+
+    def compute_output_shape(self, input_shape):
+        if self.upsampling:
+            height = self.upsampling[0] * \
+                input_shape[1] if input_shape[1] is not None else None
+            width = self.upsampling[1] * \
+                input_shape[2] if input_shape[2] is not None else None
+        else:
+            height = self.output_size[0]
+            width = self.output_size[1]
+        return (input_shape[0],
+                height,
+                width,
+                input_shape[3])
+
+    def call(self, inputs):
+        if self.upsampling:
+            return K.tf.image.resize_bilinear(inputs, (inputs.shape[1] * self.upsampling[0],
+                                                       inputs.shape[2] * self.upsampling[1]),
+                                              align_corners=True)
+        else:
+            return K.tf.image.resize_bilinear(inputs, (self.output_size[0],
+                                                       self.output_size[1]),
+                                              align_corners=True)
+
+    def get_config(self):
+        config = {'upsampling': self.upsampling,
+                  'output_size': self.output_size,
+                  'data_format': self.data_format}
+        base_config = super(BilinearUpsampling, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
 class my_3D_UNet(base_UNet):
 
-    def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2), activation='elu',pool_type='Max',final_activation='softmax',
-                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False, input_size=1,save_memory=False, mask_input=False):
+    def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
+                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False, input_size=1,save_memory=False, mask_input=False, image_size=None):
+        self.complete_input = complete_input
+        self.image_size = image_size
+        self.z_images = z_images
         self.previous_conv = None
         self.final_activation = final_activation
         if not layers_dict:
             print('Need to pass in a dictionary')
         self.is_2D = is_2D
         self.input_size = input_size
+        self.create_model = create_model
         super().__init__(filter_vals=filter_vals, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
                          pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory)
         self.striding_not_pooling = striding_not_pooling
@@ -794,15 +861,23 @@ class my_3D_UNet(base_UNet):
         self.get_unet(layers_dict)
 
     def get_unet(self, layers_dict):
+        if self.complete_input is None:
+            if self.is_2D:
+                image_input_primary = x = Input(shape=(self.image_size, self.image_size, self.input_size), name='UNet_Input')
+            else:
+                image_input_primary = x = Input(shape=(self.z_images, self.image_size, self.image_size, self.input_size), name='UNet_Input')
+        else:
+            image_input_primary = x = self.complete_input
         if self.is_2D:
-            image_input_primary = x = Input(shape=(None, None, self.input_size), name='UNet_Input')
             output_kernel = (1,1)
         else:
-            image_input_primary = x = Input(shape=(None, None, None, self.input_size), name='UNet_Input')
             output_kernel = (1,1,1)
 
         x = self.run_unet(x)
-        x = self.conv(self.out_classes,output_kernel,activation=self.final_activation,name='output')(x)
+        self.define_filters(output_kernel)
+        x = self.conv_block(self.out_classes, x, name='output', activate=False)
+        if self.final_activation is not None:
+            x = Activation(self.final_activation)(x)
         if self.mask_input:
             mask = Input(shape=(None,None,None,1),name='mask')
             inputs = [image_input_primary,mask]
@@ -810,8 +885,10 @@ class my_3D_UNet(base_UNet):
             self.custom_loss = update_wrapper(partial_func, categorical_crossentropy_masked)
         else:
             inputs = image_input_primary
-        model = Model(inputs=inputs, outputs=x)
-        self.created_model = model
+        if self.create_model:
+            model = Model(inputs=inputs, outputs=x)
+            self.created_model = model
+        self.output = x
 
 class my_3D_UNet_dvf(base_UNet):
 
