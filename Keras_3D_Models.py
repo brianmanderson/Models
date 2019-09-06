@@ -1,5 +1,7 @@
-from Keras_Utils import Conv3D, MaxPooling3D, BatchNormalization, Activation,SpatialDropout3D, Add, Input, Concatenate, \
-    Model, K, UpSampling3D, Multiply, Dropout, np, weighted_mse, Conv2D, MaxPooling2D, UpSampling2D, AveragePooling2D, categorical_crossentropy_masked
+from Utilities.Keras_Utils import Conv3D, MaxPooling3D, BatchNormalization, Activation,SpatialDropout3D, Add, Input, Concatenate, \
+    Model, K, UpSampling3D, Multiply, Dropout, np, weighted_mse, Conv2D, MaxPooling2D, UpSampling2D, AveragePooling2D, \
+    categorical_crossentropy_masked, tf
+# from tensorflow.keras.layers import Dense, Flatten, AveragePooling3D, Reshape, Cropping3D, Layer, InputSpec, Conv3DTranspose, Lambda
 from keras.layers import Dense, Flatten, AveragePooling3D, Reshape, Cropping3D, Layer, InputSpec, Conv3DTranspose, Lambda
 from keras.initializers import RandomNormal
 from keras.models import load_model
@@ -224,7 +226,7 @@ class Unet(object):
         elif len(filters) + 2 < len(x.shape):
             self.define_2D_or_3D(True)
             x = SqueezeDimension(0)(x)
-        if not self.save_memory:
+        if not self.save_memory or max(filters) == 1:
             x = self.conv(output_size, filters, activation=None, padding=self.padding,
                        name=name, strides=strides, dilation_rate=dialation_rate)(x)
         else:
@@ -235,7 +237,7 @@ class Unet(object):
         if self.batch_norm:
             x = BatchNormalization()(x)
         if activate:
-            x = Activation(self.activation)(x)
+            x = Activation(self.activation,name=name+'_activation')(x)
         return x
 
     def residual_block(self, output_size,x,name,blocks=0):
@@ -249,7 +251,7 @@ class Unet(object):
         for i in range(blocks):
             x = self.conv_block(output_size,x,name=name+'_'+str(i))
         x = self.conv(output_size, self.filters, activation=None, padding=self.padding,name=name)(x)
-        x = Add()([x,input_val])
+        x = Add(name=name+'_add')([x,input_val])
         x = Activation(self.activation)(x)
         if self.batch_norm:
             x = BatchNormalization()(x)
@@ -278,8 +280,8 @@ class Unet(object):
             x = self.conv_block(output_size=output_size,x=x,name=temp_name,dialation_rate=rate,activate=False, filters=self.filters)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if i == len(rates)-1:
-                x = Add()([x,input_val])
-            x = Activation(self.activation)(x)
+                x = Add(name=name+'_add')([x,input_val])
+            x = Activation(self.activation, name=temp_name + '_activation')(x)
             if i == 0 and get_new:
                 input_val = x
             if self.batch_norm:
@@ -291,7 +293,7 @@ class Unet(object):
                             name=name)(x)
         if self.batch_norm:
             x = BatchNormalization()(x)
-        x = Activation(self.activation)(x)
+        x = Activation(self.activation, name=name+'_activation')(x)
         return x
 
     def define_pooling_type(self,name='Max'):
@@ -313,11 +315,11 @@ class Unet(object):
     def shared_conv_block(self, x, y, output_size, name, strides=1):
         layer = Conv3D(output_size, self.filters, activation=None, padding=self.padding, name=name, strides=strides)
         x = layer(x)
-        x = Activation(self.activation)(x)
+        x = Activation(self.activation, name=name+'_activation')(x)
         if self.batch_norm:
             x = BatchNormalization()(x)
         y = layer(y)
-        y = Activation(self.activation)(y)
+        y = Activation(self.activation, name=name+'_activation')(y)
         if self.batch_norm:
             y = BatchNormalization()(y)
         return x, y
@@ -506,7 +508,7 @@ class identify_potential_slices(Unet):
             x = MaxPooling3D(pool_size=self.pool_size,name='max_pool' + str(i) + '_UNet')(x)
             self.layer += 1
         x = Conv3D(2, (1,1,1), activation=None, padding='same',name='output')(x) #output_Unet, new_output
-        x = Activation('softmax')(x)
+        x = Activation('softmax',name='Output_Activation')(x)
         model = Model(inputs=image_input, outputs=x)
         self.created_model = model
 
@@ -539,7 +541,7 @@ class identify_potential_slices(Unet):
         for i in range(4):
             x = MaxPooling3D(pool_size=(1, 2, 2), name='max_pool_out' + str(i))(x)
         x = Conv3D(2, (1,1,1), activation=None, padding='same',name='output')(x) #output_Unet, new_output
-        x = Activation('softmax')(x)
+        x = Activation('softmax',name='Output_Activation')(x)
         model = Model(inputs=image_input, outputs=x)
         self.created_model = model
 
@@ -587,7 +589,7 @@ class identify_potential_slices_unet(Unet):
             x = MaxPooling3D(pool_size=self.pool_size,name='max_pool' + self.desc + str(i) + '_UNet')(x)
             self.layer += 1
         x = Conv3D(2, (1,1,1), activation=None, padding='same',name='output')(x) #output_Unet, new_output
-        x = Activation('softmax')(x)
+        x = Activation('softmax',name='Output_Activation')(x)
         model = Model(inputs=image_input, outputs=x)
         self.created_model = model
 
@@ -616,7 +618,7 @@ class my_3D_UNet_total_skip_modular(object):
             x = Conv3D(output_size, self.filters, activation=None, padding='same',
                        name='conv' + self.desc + str(self.layer) + '_' + str(i) +'UNet')(x)
             x = BatchNormalization()(x)
-            x = Activation(self.activation)(x)
+            x = Activation(self.activation, name=self.desc+'_activation')(x)
             if drop != 0.0:
                 x = SpatialDropout3D(drop)(x)
         return x
@@ -629,7 +631,7 @@ class my_3D_UNet_total_skip_modular(object):
             x = Conv3D(int(filters), self.filters, activation=None, padding='same',
                        name='conv' + str(self.layer) + '_' + str(i) +'UNet')(x)
             x = BatchNormalization()(x)
-            x = Activation(self.activation)(x)
+            x = Activation(self.activation, name=self.layer + '_' + str(i) + '_activation')(x)
             if drop != 0.0:
                 # x = Dropout(drop)(x)
                 x = SpatialDropout3D(drop)(x)
@@ -824,11 +826,11 @@ class BilinearUpsampling(Layer):
 
     def call(self, inputs):
         if self.upsampling:
-            return K.tf.image.resize_bilinear(inputs, (inputs.shape[1] * self.upsampling[0],
+            return tf.compat.v1.image.resize_bilinear(inputs, (inputs.shape[1] * self.upsampling[0],
                                                        inputs.shape[2] * self.upsampling[1]),
                                               align_corners=True)
         else:
-            return K.tf.image.resize_bilinear(inputs, (self.output_size[0],
+            return tf.compat.v1.image.resize_bilinear(inputs, (self.output_size[0],
                                                        self.output_size[1]),
                                               align_corners=True)
 
@@ -874,6 +876,7 @@ class my_3D_UNet(base_UNet):
             output_kernel = (1,1,1)
 
         x = self.run_unet(x)
+        self.save_memory = False
         self.define_filters(output_kernel)
         x = self.conv_block(self.out_classes, x, name='output', activate=False)
         if self.final_activation is not None:
@@ -886,6 +889,11 @@ class my_3D_UNet(base_UNet):
         else:
             inputs = image_input_primary
         if self.create_model:
+            model = Model(inputs=inputs, outputs=x)
+            self.created_model = model
+        else:
+            x = BilinearUpsampling(output_size=(512,512), name='BMA_Upsampling')(x)
+            x = Activation('softmax',name='Output_Activation')(x)
             model = Model(inputs=inputs, outputs=x)
             self.created_model = model
         self.output = x
