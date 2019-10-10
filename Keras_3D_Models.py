@@ -373,23 +373,30 @@ class Unet(object):
         filter_vals = None
         res_blocks = None
         atrous_blocks = None
+        activations = None
         if 'Res_block' in filter_dict:
             res_blocks = filter_dict['Res_block']
         if 'Kernel' in filter_dict:
             filter_vals = filter_dict['Kernel']
         if 'Atrous_block' in filter_dict:
             atrous_blocks = filter_dict['Atrous_block']
+        if 'Activation' in filter_dict:
+            activations = filter_dict['Activation']
         if 'Channels' in filter_dict:
             all_filters = filter_dict['Channels']
         elif 'FC' in filter_dict:
-            all_filters = None
             x = Flatten()(x)
             for i, rate in enumerate(filter_dict['FC']):
-                x = self.FC_Block(rate,x,dropout=0.25, name=desc + '_FC_'+str(i))
+                if activations:
+                    self.define_activation(activations[i])
+                x = self.FC_Block(rate,x,dropout=filter_dict['Dropout'][i], name=desc + '_FC_'+str(i))
+            return x
         else:
             all_filters = filter_dict
         rescale = False
         for i in range(len(all_filters)):
+            if activations:
+                self.define_activation(activations[i])
             if filter_vals:
                 self.define_filters(filter_vals[i])
                 if len(filter_vals[i]) + 1 == len(x.shape):
@@ -438,9 +445,10 @@ class Unet(object):
             self.layer_vals[layer_index] = x
             if 'Pooling' in self.layers_dict[layer]:
                 self.define_pool_size(self.layers_dict[layer]['Pooling'])
+            if 'Pooling_Type' in self.layers_dict[layer]:
+                self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
             if len(self.layers_names) > 1:
                 x = self.pooling_down_block(x, layer + '_Pooling')
-            # x = self.strided_conv_block(all_filters[i],x=x,strides=self.pool_size,name='Strided_Conv_' + layer)
             layer_index += 1
         concat = False
         if 'Base' in self.layers_dict:
@@ -479,6 +487,7 @@ class base_UNet(Unet):
         self.define_activation(activation)
         self.define_padding('same')
         self.define_pooling_type(pool_type)
+
     def get_unet(self,layers_dict):
         pass
 
