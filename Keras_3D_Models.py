@@ -381,6 +381,11 @@ class Unet(object):
             atrous_blocks = filter_dict['Atrous_block']
         if 'Channels' in filter_dict:
             all_filters = filter_dict['Channels']
+        elif 'FC' in filter_dict:
+            all_filters = None
+            x = Flatten()(x)
+            for i, rate in enumerate(filter_dict['FC']):
+                x = self.FC_Block(rate,x,dropout=0.25, name=desc + '_FC_'+str(i))
         else:
             all_filters = filter_dict
         rescale = False
@@ -407,9 +412,6 @@ class Unet(object):
                 x = self.atrous_block(all_filters[i],x=x,name=self.desc,rate_blocks=atrous_blocks[i])
             else:
                 x = self.conv_block(all_filters[i], x=x, strides=strides, name=self.desc)
-        # if rescale:
-        #     x = SqueezeDimension(0)(x)
-        #     self.define_2D_or_3D(is_2D=True)
         return x
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
@@ -841,6 +843,61 @@ class BilinearUpsampling(Layer):
         base_config = super(BilinearUpsampling, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+class BilinearUpsampling3D(Layer):
+    """Just a simple bilinear upsampling layer. Works only with TF.
+       Args:
+           upsampling: tuple of 2 numbers > 0. The upsampling ratio for h and w
+           output_size: used instead of upsampling arg if passed!
+    """
+
+    def __init__(self, upsampling=(2, 2, 2), output_size=None, data_format=None, **kwargs):
+
+        super(BilinearUpsampling3D, self).__init__(**kwargs)
+
+        self.data_format = K.normalize_data_format(data_format)
+        self.input_spec = InputSpec(ndim=5)
+        if output_size:
+            self.output_size = conv_utils.normalize_tuple(
+                output_size, 2, 'output_size')
+            self.upsampling = None
+        else:
+            self.output_size = None
+            self.upsampling = conv_utils.normalize_tuple(
+                upsampling, 2, 'upsampling')
+
+    def compute_output_shape(self, input_shape):
+        if self.upsampling:
+            height = self.upsampling[0] * input_shape[1] if input_shape[1] is not None else None
+            width = self.upsampling[1] * input_shape[2] if input_shape[2] is not None else None
+            depth = self.upsampling[2] * input_shape[3] if input_shape[3] is not None else None
+        else:
+            height = self.output_size[0]
+            width = self.output_size[1]
+            depth = self.output_size[2]
+        return (input_shape[0],
+                height,
+                width,
+                depth,
+                input_shape[4])
+
+    def call(self, inputs):
+        if self.upsampling:
+            return tf.compat.v1.image.resize_bilinear(inputs, (inputs.shape[1] * self.upsampling[0],
+                                                               inputs.shape[2] * self.upsampling[1],
+                                                               inputs.shape[3] * self.upsampling[2]),
+                                                      align_corners=True)
+        else:
+            return tf.compat.v1.image.resize_bilinear(inputs, (self.output_size[0],self.output_size[1],
+                                                               self.output_size[2]),
+                                                      align_corners=True)
+
+    def get_config(self):
+        config = {'upsampling': self.upsampling,
+                  'output_size': self.output_size,
+                  'data_format': self.data_format}
+        base_config = super(BilinearUpsampling3D, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
 class my_3D_UNet(base_UNet):
 
     def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
@@ -882,9 +939,9 @@ class my_3D_UNet(base_UNet):
         if self.final_activation is not None:
             x = Activation(self.final_activation)(x)
         if self.mask_input:
-            mask = Input(shape=(None,None,None,1),name='mask')
-            inputs = [image_input_primary,mask]
-            partial_func = partial(categorical_crossentropy_masked, mask=mask)
+            self.mask = Input(shape=(None,None,None,1),name='mask')
+            inputs = [image_input_primary,self.mask]
+            partial_func = partial(categorical_crossentropy_masked, mask=self.mask)
             self.custom_loss = update_wrapper(partial_func, categorical_crossentropy_masked)
         else:
             inputs = image_input_primary
