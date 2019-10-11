@@ -385,7 +385,8 @@ class Unet(object):
         if 'Channels' in filter_dict:
             all_filters = filter_dict['Channels']
         elif 'FC' in filter_dict:
-            x = Flatten()(x)
+            if len(x.shape) != 2:
+                x = Flatten()(x)
             for i, rate in enumerate(filter_dict['FC']):
                 if activations:
                     self.define_activation(activations[i])
@@ -443,12 +444,13 @@ class Unet(object):
             all_filters = self.layers_dict[layer]['Encoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer_vals[layer_index] = x
-            if 'Pooling' in self.layers_dict[layer]:
-                self.define_pool_size(self.layers_dict[layer]['Pooling'])
-            if 'Pooling_Type' in self.layers_dict[layer]:
-                self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
-            if len(self.layers_names) > 1:
-                x = self.pooling_down_block(x, layer + '_Pooling')
+            if 'Pooling' not in self.layers_dict[layer] or ('Pooling' in self.layers_dict[layer] and self.layers_dict[layer]['Pooling'] is not None):
+                if 'Pooling' in self.layers_dict[layer]:
+                    self.define_pool_size(self.layers_dict[layer]['Pooling'])
+                if 'Pooling_Type' in self.layers_dict[layer]:
+                    self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
+                if len(self.layers_names) > 1:
+                    x = self.pooling_down_block(x, layer + '_Pooling')
             layer_index += 1
         concat = False
         if 'Base' in self.layers_dict:
@@ -910,7 +912,8 @@ class BilinearUpsampling3D(Layer):
 class my_3D_UNet(base_UNet):
 
     def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
-                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False, input_size=1,save_memory=False, mask_input=False, image_size=None):
+                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_input=False, image_size=None):
+        self.semantic_segmentation = semantic_segmentation
         self.complete_input = complete_input
         self.image_size = image_size
         self.z_images = z_images
@@ -944,7 +947,8 @@ class my_3D_UNet(base_UNet):
         x = self.run_unet(x)
         self.save_memory = False
         self.define_filters(output_kernel)
-        x = self.conv_block(self.out_classes, x, name='output', activate=False)
+        if self.semantic_segmentation:
+            x = self.conv_block(self.out_classes, x, name='output', activate=False)
         if self.final_activation is not None:
             x = Activation(self.final_activation)(x)
         if self.mask_input:
