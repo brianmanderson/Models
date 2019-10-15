@@ -947,10 +947,11 @@ class my_3D_UNet(base_UNet):
         else:
             output_kernel = (1,1,1)
         # Normalizing image
-        mean_val = variable(value=(self.mean_val,))
-        std_val = variable(value=(self.std_val,))
-        x = Subtract_new(mean_val)(x)
-        x = Multipy_new(1/std_val)(x)
+        if self.mean_val != 0 or self.std_val != 1:
+            mean_val = variable(value=(self.mean_val,))
+            std_val = variable(value=(self.std_val,))
+            x = Subtract_new(mean_val)(x)
+            x = Multipy_new(1/std_val)(x)
         x = self.run_unet(x)
         self.save_memory = False
         self.define_filters(output_kernel)
