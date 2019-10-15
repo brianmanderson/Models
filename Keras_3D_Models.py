@@ -913,7 +913,8 @@ class my_3D_UNet(base_UNet):
 
     def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
                  batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_input=False, image_size=None,
-                 mean_val=0,std_val=1):
+                 mean_val=0,std_val=1, noise=0.0):
+        self.noise = noise
         self.semantic_segmentation = semantic_segmentation
         self.complete_input = complete_input
         self.image_size = image_size
@@ -952,6 +953,8 @@ class my_3D_UNet(base_UNet):
             std_val = variable(value=(self.std_val,))
             x = Subtract_new(mean_val)(x)
             x = Multipy_new(1/std_val)(x)
+        if self.noise != 0.0:
+            x = GaussianNoise(self.noise)(x)
         x = self.run_unet(x)
         self.save_memory = False
         self.define_filters(output_kernel)
