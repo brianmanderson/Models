@@ -1,8 +1,6 @@
-from Utilities.Keras_Utils import Conv3D, MaxPooling3D, BatchNormalization, Activation,SpatialDropout3D, Add, Input, Concatenate, \
-    Model, K, UpSampling3D, Multiply, Dropout, np, weighted_mse, Conv2D, MaxPooling2D, UpSampling2D, AveragePooling2D, \
-    categorical_crossentropy_masked, tf
-# from tensorflow.keras.layers import Dense, Flatten, AveragePooling3D, Reshape, Cropping3D, Layer, InputSpec, Conv3DTranspose, Lambda
-from keras.layers import Dense, Flatten, AveragePooling3D, Reshape, Cropping3D, Layer, InputSpec, Conv3DTranspose, Lambda
+from Utilities.Keras_Utils import Model, K, np, weighted_mse, categorical_crossentropy_masked, tf
+from keras.backend import variable
+from keras.layers import *
 from keras.initializers import RandomNormal
 from keras.models import load_model
 from functools import partial, update_wrapper
@@ -11,6 +9,8 @@ from keras.utils import conv_utils
 
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
 SqueezeDimension = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
+Subtract_new = lambda y: Lambda(lambda x: Subtract()([x,y]))
+Multipy_new = lambda y: Lambda(lambda x: Multiply()([x,y]))
 
 def wrapped_partial(func, *args, **kwargs):
     partial_func = partial(func, *args, **kwargs)
@@ -912,7 +912,8 @@ class BilinearUpsampling3D(Layer):
 class my_3D_UNet(base_UNet):
 
     def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
-                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_input=False, image_size=None):
+                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_input=False, image_size=None,
+                 mean_val=0,std_val=1):
         self.semantic_segmentation = semantic_segmentation
         self.complete_input = complete_input
         self.image_size = image_size
@@ -924,6 +925,8 @@ class my_3D_UNet(base_UNet):
         self.is_2D = is_2D
         self.input_size = input_size
         self.create_model = create_model
+        self.mean_val = mean_val
+        self.std_val = std_val
         super().__init__(filter_vals=filter_vals, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
                          pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory)
         self.striding_not_pooling = striding_not_pooling
@@ -943,7 +946,11 @@ class my_3D_UNet(base_UNet):
             output_kernel = (1,1)
         else:
             output_kernel = (1,1,1)
-
+        # Normalizing image
+        mean_val = variable(value=(self.mean_val,))
+        std_val = variable(value=(self.std_val,))
+        x = Subtract_new(mean_val)(x)
+        x = Multipy_new(1/std_val)(x)
         x = self.run_unet(x)
         self.save_memory = False
         self.define_filters(output_kernel)
