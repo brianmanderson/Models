@@ -281,11 +281,11 @@ class Unet(object):
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if i == len(rates)-1:
                 x = Add(name=name+'_add')([x,input_val])
+            if self.batch_norm:
+                x = BatchNormalization()(x)
             x = Activation(self.activation, name=temp_name + '_activation')(x)
             if i == 0 and get_new:
                 input_val = x
-            if self.batch_norm:
-                x = BatchNormalization()(x)
         return x
 
     def strided_conv_block(self, output_size, x, name, strides=(2,2,2)):
@@ -315,13 +315,13 @@ class Unet(object):
     def shared_conv_block(self, x, y, output_size, name, strides=1):
         layer = Conv3D(output_size, self.filters, activation=None, padding=self.padding, name=name, strides=strides)
         x = layer(x)
-        x = Activation(self.activation, name=name+'_activation')(x)
         if self.batch_norm:
             x = BatchNormalization()(x)
+        x = Activation(self.activation, name=name+'_activation')(x)
         y = layer(y)
-        y = Activation(self.activation, name=name+'_activation')(y)
         if self.batch_norm:
-            y = BatchNormalization()(y)
+            x = BatchNormalization()(x)
+        y = Activation(self.activation, name=name+'_activation')(y)
         return x, y
 
     def do_conv_block_enc(self, x):
@@ -761,8 +761,8 @@ class my_3D_UNet_total_skip(object):
             i += 1
             x = Conv3D(int(int(x.shape[-1])/2), self.filters, activation=None, padding='same',
                        name='conv' + str(self.layer) + '_' + str(i) +'UNet')(x)
-            x = Activation(self.activation)(x)
             x = BatchNormalization()(x)
+            x = Activation(self.activation)(x)
             if drop != 0.0:
                 # x = Dropout(drop)(x)
                 x = SpatialDropout3D(drop)(x)
@@ -1238,9 +1238,9 @@ class my_3D_UNet_dvf_Inception(object):
             # if layer_vals[i].shape.as_list()[1] != x.shape.as_list()[1]:
             #     x = pad_depth(x,layer_vals[i].shape.as_list()[1])
             x = Concatenate(name='concat' + str(i) + '_Unet')([x, layer_vals[i]])
-            x = BatchNormalization()(x)
             x = Conv3D(int(block), kernel_size=self.filters, padding='same',
                        name='Conv_concat' + self.desc + str(self.layer) + '_UNet')(x)
+            x = BatchNormalization()(x)
             x = Activation(self.activation)(x)
             block = filter_vals[i] # Mirror one side to the next
             # x = Conv3D(block, self.filter_vals, activation=None, padding='same', name='reduce_' + str(i))(x)
@@ -1251,14 +1251,14 @@ class my_3D_UNet_dvf_Inception(object):
             x = self.conv_block(int(block), x)
             self.layer += 1
 
-        x = BatchNormalization()(x)
         x = Conv3D(64, (3, 3, 3), activation=None, padding='same', name='before_output_0')(x)
-        x = Activation(self.activation)(x)
         x = BatchNormalization()(x)
+        x = Activation(self.activation)(x)
         x = Conv3D(32, (3, 3, 3), activation=None, padding='same', name='before_output_1')(x)
-        x = Activation(self.activation)(x)
         x = BatchNormalization()(x)
+        x = Activation(self.activation)(x)
         x = Conv3D(3, (1,1,1), activation=None, padding='same',name='output_Unet')(x)
+        x = BatchNormalization()(x)
         x = Activation('linear')(x)
         model = Model(inputs=image_inputs, outputs=x)
         self.created_model = model
