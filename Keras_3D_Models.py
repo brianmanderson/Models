@@ -973,7 +973,8 @@ class my_3D_UNet(base_UNet):
                 partial_func = partial(self.custom_loss, mask=self.mask)
                 self.custom_loss = update_wrapper(partial_func, self.custom_loss)
             if self.mask_output:
-                x = Multiply()([x,self.mask])
+                KeyError('Do not use mask_output, does not seem to work')
+                x = Multiply()([self.mask,x])
         else:
             inputs = image_input_primary
         if self.create_model:
