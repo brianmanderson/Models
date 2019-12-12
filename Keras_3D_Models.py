@@ -1,4 +1,5 @@
-from Keras_Utils.Keras_Utilities import Model, weighted_mse, categorical_crossentropy_masked, tf
+from keras.models import Model
+import tensorflow as tf
 from keras.backend import variable
 from keras.layers import *
 from keras.initializers import RandomNormal
@@ -913,7 +914,8 @@ class my_3D_UNet(base_UNet):
 
     def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
                  batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_input=False, image_size=None,
-                 mean_val=0,std_val=1, noise=0.0):
+                 mean_val=0,std_val=1, noise=0.0, custom_loss=categorical_crossentropy_masked):
+        self.custom_loss = custom_loss
         self.noise = noise
         self.semantic_segmentation = semantic_segmentation
         self.complete_input = complete_input
@@ -965,8 +967,8 @@ class my_3D_UNet(base_UNet):
         if self.mask_input:
             self.mask = Input(shape=(None,None,None,1),name='mask')
             inputs = [image_input_primary,self.mask]
-            partial_func = partial(categorical_crossentropy_masked, mask=self.mask)
-            self.custom_loss = update_wrapper(partial_func, categorical_crossentropy_masked)
+            partial_func = partial(self.custom_loss, mask=self.mask)
+            self.custom_loss = update_wrapper(partial_func, self.custom_loss)
         else:
             inputs = image_input_primary
         if self.create_model:
