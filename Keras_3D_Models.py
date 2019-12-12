@@ -913,8 +913,9 @@ class BilinearUpsampling3D(Layer):
 class my_3D_UNet(base_UNet):
 
     def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
-                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_input=False, image_size=None,
-                 mean_val=0,std_val=1, noise=0.0, custom_loss=categorical_crossentropy_masked):
+                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_output=False, image_size=None,
+                 mean_val=0,std_val=1, noise=0.0, custom_loss=None, mask_loss=False):
+        self.mask_loss = mask_loss
         self.custom_loss = custom_loss
         self.noise = noise
         self.semantic_segmentation = semantic_segmentation
@@ -934,7 +935,7 @@ class my_3D_UNet(base_UNet):
                          pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory)
         self.striding_not_pooling = striding_not_pooling
         self.out_classes = out_classes
-        self.mask_input = mask_input
+        self.mask_output = mask_output
         self.get_unet(layers_dict)
 
     def get_unet(self, layers_dict):
@@ -964,11 +965,15 @@ class my_3D_UNet(base_UNet):
             x = self.conv_block(self.out_classes, x, name='output', activate=False)
         if self.final_activation is not None:
             x = Activation(self.final_activation)(x)
-        if self.mask_input:
+        if self.mask_loss or self.mask_output:
             self.mask = Input(shape=(None,None,None,1),name='mask')
             inputs = [image_input_primary,self.mask]
-            partial_func = partial(self.custom_loss, mask=self.mask)
-            self.custom_loss = update_wrapper(partial_func, self.custom_loss)
+            if self.mask_loss:
+                assert self.custom_loss is not None, 'Need to specify a custom loss when using masked input'
+                partial_func = partial(self.custom_loss, mask=self.mask)
+                self.custom_loss = update_wrapper(partial_func, self.custom_loss)
+            if self.mask_output:
+                x = Multiply()([x,self.mask])
         else:
             inputs = image_input_primary
         if self.create_model:
