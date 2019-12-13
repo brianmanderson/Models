@@ -963,8 +963,10 @@ class my_3D_UNet(base_UNet):
         self.define_filters(output_kernel)
         if self.semantic_segmentation:
             x = self.conv_block(self.out_classes, x, name='output', activate=False)
+        if self.final_activation is not None:
+            x = Activation(self.final_activation)(x)
         if self.mask_loss or self.mask_output:
-            self.mask = Input(shape=(None,None,None,1),name='mask')
+            self.mask = Input(shape=(None,None,None,self.out_classes),name='mask')
             inputs = [image_input_primary,self.mask]
             if self.mask_loss:
                 assert self.custom_loss is not None, 'Need to specify a custom loss when using masked input'
@@ -975,8 +977,6 @@ class my_3D_UNet(base_UNet):
                 x = Multiply()([self.mask,x])
         else:
             inputs = image_input_primary
-        if self.final_activation is not None:
-            x = Activation(self.final_activation)(x)
         if self.create_model:
             model = Model(inputs=inputs, outputs=x)
             self.created_model = model
