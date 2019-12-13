@@ -963,8 +963,6 @@ class my_3D_UNet(base_UNet):
         self.define_filters(output_kernel)
         if self.semantic_segmentation:
             x = self.conv_block(self.out_classes, x, name='output', activate=False)
-        if self.final_activation is not None:
-            x = Activation(self.final_activation)(x)
         if self.mask_loss or self.mask_output:
             self.mask = Input(shape=(None,None,None,1),name='mask')
             inputs = [image_input_primary,self.mask]
@@ -973,10 +971,12 @@ class my_3D_UNet(base_UNet):
                 partial_func = partial(self.custom_loss, mask=self.mask)
                 self.custom_loss = update_wrapper(partial_func, self.custom_loss)
             if self.mask_output:
-                KeyError('Do not use mask_output, does not seem to work')
+                # KeyError('Do not use mask_output, does not seem to work')
                 x = Multiply()([self.mask,x])
         else:
             inputs = image_input_primary
+        if self.final_activation is not None:
+            x = Activation(self.final_activation)(x)
         if self.create_model:
             model = Model(inputs=inputs, outputs=x)
             self.created_model = model
