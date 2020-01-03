@@ -967,7 +967,8 @@ class my_3D_UNet(base_UNet):
             x = Activation(self.final_activation)(x)
         if self.mask_loss or self.mask_output:
             self.mask = Input(shape=(None,None,None,self.out_classes),name='mask')
-            inputs = [image_input_primary,self.mask]
+            self.sum_vals = Input(shape=(None, None, None, self.out_classes), name='sum_vals')
+            inputs = [image_input_primary,self.mask,self.sum_vals]
             if self.mask_loss:
                 assert self.custom_loss is not None, 'Need to specify a custom loss when using masked input'
                 partial_func = partial(self.custom_loss, mask=self.mask)
@@ -975,6 +976,7 @@ class my_3D_UNet(base_UNet):
             if self.mask_output:
                 # KeyError('Do not use mask_output, does not seem to work')
                 x = Multiply()([self.mask,x])
+                x = Add()([self.sum_vals,x])
         else:
             inputs = image_input_primary
         if self.create_model:
