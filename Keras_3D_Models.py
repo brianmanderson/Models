@@ -6,6 +6,7 @@ from keras.initializers import RandomNormal
 from keras.models import load_model
 from functools import partial, update_wrapper
 from keras.utils import conv_utils
+import numpy as np
 
 
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
