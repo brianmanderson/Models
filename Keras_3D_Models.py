@@ -1,4 +1,5 @@
 from keras.models import Model
+import keras.backend as K
 import tensorflow as tf
 from keras.backend import variable
 from keras.layers import *
@@ -78,29 +79,6 @@ class ClusteringLayer(Layer):
         config = {'n_clusters': self.n_clusters}
         base_config = super(ClusteringLayer, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
-
-class DCEC(object):
-    def __init__(self,output_shape=(28,28,28,1),
-                 ae_model_path='.',
-                 n_clusters=4,
-                 alpha=1.0):
-
-        super(DCEC, self).__init__()
-
-        self.n_clusters = n_clusters
-        self.alpha = alpha
-        self.pretrained = False
-        self.y_pred = []
-
-        self.cae = load_model(ae_model_path)
-        hidden = self.cae.get_layer(name='Layer_0_Decoding_Conv1').output
-        self.encoder = Model(inputs=self.cae.input, outputs=hidden)
-
-        # Define DCEC model
-        clustering_layer = ClusteringLayer(self.n_clusters, name='clustering')(Flatten()(hidden))
-        clustering_layer = Reshape(output_shape)(clustering_layer)
-        self.model = Model(inputs=self.cae.input,outputs=clustering_layer)
 
 
 class Unet(object):
@@ -188,17 +166,18 @@ class Unet(object):
             x = self.run_FC_block(x, all_connections, name=self.desc)
         return x
 
-
     def define_2D_or_3D(self, is_2D=False):
         self.is_2D = is_2D
         if is_2D:
             self.conv = Conv2D
             self.pool = MaxPooling2D
             self.up_sample = UpSampling2D
+            self.tranpose_conv = Conv2DTranspose
         else:
             self.conv = Conv3D
             self.pool = MaxPooling3D
             self.up_sample = UpSampling3D
+            self.tranpose_conv = Conv3DTranspose
 
     def define_batch_norm(self, batch_norm=False):
         self.batch_norm = batch_norm
@@ -263,7 +242,7 @@ class Unet(object):
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         rates = []
         get_new = True
-        if x.shape[-1] == output_size:
+        if x.shape[-1] == output_size or x.shape[-1] == 1:
             input_val = x
             get_new = False
         #     x = input_val = self.conv_block(output_size, x=x, name=name + 'Atrous_' + 'rescale_input', activate=True,
@@ -281,11 +260,11 @@ class Unet(object):
             temp_name = name + 'Atrous_' + str(rate[-1])
             x = self.conv_block(output_size=output_size,x=x,name=temp_name,dialation_rate=rate,activate=False, filters=self.filters)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
-            if i == len(rates)-1:
-                x = Add(name=name+'_add')([x,input_val])
             if self.batch_norm:
                 x = BatchNormalization()(x)
             x = Activation(self.activation, name=temp_name + '_activation')(x)
+            if i == len(rates)-1:
+                x = Add(name=name+'_add')([x,input_val])
             if i == 0 and get_new:
                 input_val = x
         return x
@@ -371,65 +350,65 @@ class Unet(object):
             self.layer += 1
         return x
 
-    def dict_conv_block(self, x, filter_dict, desc):
-        filter_vals = None
-        res_blocks = None
-        atrous_blocks = None
-        activations = None
-        if 'Res_block' in filter_dict:
-            res_blocks = filter_dict['Res_block']
-        if 'Kernel' in filter_dict:
-            filter_vals = filter_dict['Kernel']
-        if 'Atrous_block' in filter_dict:
-            atrous_blocks = filter_dict['Atrous_block']
-        if 'Activation' in filter_dict:
-            activations = filter_dict['Activation']
-        if 'Channels' in filter_dict:
-            all_filters = filter_dict['Channels']
-        elif 'FC' in filter_dict:
-            if len(x.shape) != 2:
-                x = Flatten()(x)
-            for i, rate in enumerate(filter_dict['FC']):
+    def dict_conv_block(self, x, desc, kernels=None,res_blocks=None,atrous_blocks=None,up_sample_blocks=None,
+                        down_sample_blocks=None,activations=None,strides=None,channels=None,type='Conv',**kwargs):
+        reset_conv = False
+        if type == 'Transpose':
+            reset_conv = True
+            conv_base = self.conv
+            self.conv = self.tranpose_conv
+        elif type == 'Upsample':
+            up_sample_blocks = 1
+        rescale = False
+        if type != 'Upsample' and type != 'Downsample':
+            for i in range(len(channels)):
+                stride = None
+                if strides is not None:
+                    stride = strides[i]
                 if activations:
                     self.define_activation(activations[i])
-                x = self.FC_Block(rate,x,dropout=filter_dict['Dropout'][i], name=desc + '_FC_'+str(i))
-            return x
-        else:
-            all_filters = filter_dict
-        rescale = False
-        for i in range(len(all_filters)):
-            if activations:
-                self.define_activation(activations[i])
-            if filter_vals:
-                self.define_filters(filter_vals[i])
-                if len(filter_vals[i]) + 1 == len(x.shape):
-                    self.define_2D_or_3D(is_2D=False)
-                    x = ExpandDimension(0)(x)
-                    rescale = True
-                elif len(filter_vals[i]) + 1 > len(x.shape):
-                    self.define_2D_or_3D(True)
-                    x = SqueezeDimension(0)(x)
-            strides = 1
-            if rescale:
-                self.desc = desc + '3D_' + str(i)
-            else:
-                self.desc = desc + str(i)
+                if kernels:
+                    self.define_filters(kernels[i])
+                    if len(kernels[i]) + 1 == len(x.shape):
+                        self.define_2D_or_3D(is_2D=False)
+                        x = ExpandDimension(0)(x)
+                        rescale = True
+                    elif len(kernels[i]) + 1 > len(x.shape):
+                        self.define_2D_or_3D(True)
+                        x = SqueezeDimension(0)(x)
+                if rescale:
+                    self.desc = desc + '3D_' + str(i)
+                else:
+                    self.desc = desc + str(i)
 
-            if res_blocks:
-                rate = res_blocks[i] if res_blocks else 0
-                x = self.residual_block(all_filters[i], x=x, name=self.desc,blocks=rate)
-            elif atrous_blocks:
-                x = self.atrous_block(all_filters[i],x=x,name=self.desc,rate_blocks=atrous_blocks[i])
+                if res_blocks:
+                    rate = res_blocks[i] if res_blocks else 0
+                    x = self.residual_block(channels[i], x=x, name=self.desc,blocks=rate)
+                elif atrous_blocks:
+                    x = self.atrous_block(channels[i],x=x,name=self.desc,rate_blocks=atrous_blocks[i])
+                elif up_sample_blocks is not None:
+                    if stride is not None:
+                        self.define_pool_size(stride)
+                    x = self.up_sample(self.pool_size)(x)
+                else:
+                    x = self.conv_block(channels[i], x=x, strides=stride, name=self.desc)
+            if reset_conv:
+                self.conv = conv_base
+        elif type == 'Upsample':
+            if strides is not None:
+                for i in range(len(strides)):
+                    self.define_pool_size(strides[i])
+                    x = self.up_sample(self.pool_size)(x)
             else:
-                x = self.conv_block(all_filters[i], x=x, strides=strides, name=self.desc)
+                x = self.up_sample(self.pool_size)(x)
         return x
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
         if type(layer_dict) == list:
             for i, filters in enumerate(layer_dict):
-                x = self.dict_conv_block(x, filters, layer + '_' + desc + '_' + str(i))
+                x = self.dict_conv_block(x, layer + '_' + desc + '_' + str(i), **filters)
         else:
-            x = self.dict_conv_block(x, layer_dict, layer + '_' + desc + '_')
+            x = self.dict_conv_block(x, layer + '_' + desc + '_', **layer_dict)
         return x
 
     def run_unet(self, x):
@@ -447,12 +426,15 @@ class Unet(object):
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer_vals[layer_index] = x
             if 'Pooling' not in self.layers_dict[layer] or ('Pooling' in self.layers_dict[layer] and self.layers_dict[layer]['Pooling'] is not None):
-                if 'Pooling' in self.layers_dict[layer]:
-                    self.define_pool_size(self.layers_dict[layer]['Pooling'])
-                if 'Pooling_Type' in self.layers_dict[layer]:
-                    self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
-                if len(self.layers_names) > 1:
-                    x = self.pooling_down_block(x, layer + '_Pooling')
+                if 'Encoding' in self.layers_dict[layer]['Pooling']:
+                    x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Encoding'], layer, 'strided_conv')
+                else:
+                    if 'Pooling' in self.layers_dict[layer]:
+                        self.define_pool_size(self.layers_dict[layer]['Pooling'])
+                    if 'Pooling_Type' in self.layers_dict[layer]:
+                        self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
+                    if len(self.layers_names) > 1:
+                        x = self.pooling_down_block(x, layer + '_Pooling')
             layer_index += 1
         concat = False
         if 'Base' in self.layers_dict:
@@ -468,12 +450,18 @@ class Unet(object):
             print(layer)
             layer_index -= 1
             if 'Pooling' in self.layers_dict[layer]:
-                self.define_pool_size(self.layers_dict[layer]['Pooling'])
+                if 'Decoding' in self.layers_dict[layer]['Pooling']:
+                    x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'], layer, 'transpose_conv')
+                else:
+                    self.define_pool_size(self.layers_dict[layer]['Pooling'])
+                    x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
+            previous = x
             if concat:
-                x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
                 x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
             all_filters = self.layers_dict[layer]['Decoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
+            if x.shape[-1] == previous.shape[-1]:
+                x = Add(name='Add_' + desc + str(layer))([x,previous])
             self.layer += 1
         return x
 
@@ -915,7 +903,7 @@ class my_3D_UNet(base_UNet):
 
     def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
                  batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_output=False, image_size=None,
-                 mean_val=0,std_val=1, noise=0.0, custom_loss=None, mask_loss=False):
+                 custom_loss=None, mask_loss=False):
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
         self.noise = noise
@@ -930,8 +918,6 @@ class my_3D_UNet(base_UNet):
         self.is_2D = is_2D
         self.input_size = input_size
         self.create_model = create_model
-        self.mean_val = mean_val
-        self.std_val = std_val
         super().__init__(filter_vals=filter_vals, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
                          pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory)
         self.striding_not_pooling = striding_not_pooling
@@ -951,14 +937,6 @@ class my_3D_UNet(base_UNet):
             output_kernel = (1,1)
         else:
             output_kernel = (1,1,1)
-        # Normalizing image
-        if self.mean_val != 0 or self.std_val != 1:
-            mean_val = variable(value=(self.mean_val,))
-            std_val = variable(value=(self.std_val,))
-            x = Subtract_new(mean_val)(x)
-            x = Multipy_new(1/std_val)(x)
-        if self.noise != 0.0:
-            x = GaussianNoise(self.noise)(x)
         x = self.run_unet(x)
         self.save_memory = False
         self.define_filters(output_kernel)
