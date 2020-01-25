@@ -198,7 +198,9 @@ class Unet(object):
     def define_padding(self, padding='same'):
         self.padding = padding
 
-    def conv_block(self,output_size,x, name, strides=1, dialation_rate=1, activate=True,filters=None):
+    def conv_block(self,output_size,x, name, strides=1, dialation_rate=1, activate=True,filters=None,conv_func=None):
+        if conv_func is None:
+            conv_func = self.conv
         if not filters:
             filters = self.filters
         if len(filters) + 1 == len(x.shape):
@@ -208,13 +210,13 @@ class Unet(object):
             self.define_2D_or_3D(True)
             x = SqueezeDimension(0)(x)
         if not self.save_memory or max(filters) == 1:
-            x = self.conv(output_size, filters, activation=None, padding=self.padding,
+            x = conv_func(output_size, filters, activation=None, padding=self.padding,
                        name=name, strides=strides, dilation_rate=dialation_rate)(x)
         else:
             for i in range(len(filters)):
                 filter = np.ones(len(filters)).astype('int')
                 filter[i] = filters[i]
-                x = self.conv(output_size, filter, activation=None, padding=self.padding,name=name+'_'+str(i), strides=strides, dilation_rate=dialation_rate)(x) # Turn a 3x3 into a 3x1 with a 1x3
+                x = conv_func(output_size, filter, activation=None, padding=self.padding,name=name+'_'+str(i), strides=strides, dilation_rate=dialation_rate)(x) # Turn a 3x3 into a 3x1 with a 1x3
         if self.batch_norm:
             x = BatchNormalization()(x)
         if activate:
@@ -242,6 +244,7 @@ class Unet(object):
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         rates = []
         get_new = True
+        input_val = None
         if x.shape[-1] == output_size or x.shape[-1] == 1:
             input_val = x
             get_new = False
@@ -263,7 +266,7 @@ class Unet(object):
             if self.batch_norm:
                 x = BatchNormalization()(x)
             x = Activation(self.activation, name=temp_name + '_activation')(x)
-            if i == len(rates)-1:
+            if i == len(rates)-1 and input_val is not None:
                 x = Add(name=name+'_add')([x,input_val])
             if i == 0 and get_new:
                 input_val = x
@@ -352,11 +355,9 @@ class Unet(object):
 
     def dict_conv_block(self, x, desc, kernels=None,res_blocks=None,atrous_blocks=None,up_sample_blocks=None,
                         down_sample_blocks=None,activations=None,strides=None,channels=None,type='Conv',**kwargs):
-        reset_conv = False
+        conv_func = self.conv
         if type == 'Transpose':
-            reset_conv = True
-            conv_base = self.conv
-            self.conv = self.tranpose_conv
+            conv_func = self.tranpose_conv
         elif type == 'Upsample':
             up_sample_blocks = 1
         rescale = False
@@ -391,9 +392,7 @@ class Unet(object):
                         self.define_pool_size(stride)
                     x = self.up_sample(self.pool_size)(x)
                 else:
-                    x = self.conv_block(channels[i], x=x, strides=stride, name=self.desc)
-            if reset_conv:
-                self.conv = conv_base
+                    x = self.conv_block(channels[i], x=x, strides=stride, name=self.desc, conv_func=conv_func)
         elif type == 'Upsample':
             if strides is not None:
                 for i in range(len(strides)):
