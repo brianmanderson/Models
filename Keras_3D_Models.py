@@ -245,7 +245,7 @@ class Unet(object):
         rates = []
         get_new = True
         input_val = None
-        if x.shape[-1] == output_size or x.shape[-1] == 1:
+        if x.shape[-1] == output_size:
             input_val = x
             get_new = False
         #     x = input_val = self.conv_block(output_size, x=x, name=name + 'Atrous_' + 'rescale_input', activate=True,
