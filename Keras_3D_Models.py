@@ -265,9 +265,9 @@ class Unet(object):
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if self.batch_norm:
                 x = BatchNormalization()(x)
-            x = Activation(self.activation, name=temp_name + '_activation')(x)
             if i == len(rates)-1 and input_val is not None:
                 x = Add(name=name+'_add')([x,input_val])
+            x = Activation(self.activation, name=temp_name + '_activation')(x)
             if i == 0 and get_new:
                 input_val = x
         return x
