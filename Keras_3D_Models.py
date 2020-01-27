@@ -328,22 +328,15 @@ class Unet(object):
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
-        rates = []
         get_new = True
         input_val = None
         if x.shape[-1] == channels:
             input_val = x
             get_new = False
-        for rate_block in range(atrous_rate):
-            rate = []
-            for i in range(len(self.filters)):
-                rate.append(self.filters[i]**(rate_block)) # not plus 1 minus 1, since we are 0 indexed
-            # if len(rate) == 3 and rate[0] > 9:
-            #     rate[0] = 9
-            rates.append(rate)
+        rates = [[kernel[i]**rate_block for i in range(len(kernel))] for rate_block in range(atrous_rate)]
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
-            x = self.conv_block(output_size=channels,x=x,name=temp_name,dialation_rate=rate,activate=False, kernel=kernel)
+            x = self.conv_block(channels=channels,x=x,name=temp_name,dialation_rate=rate,activate=False, kernel=kernel)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if self.batch_norm:
                 x = BatchNormalization()(x)
@@ -351,8 +344,9 @@ class Unet(object):
                 x = Add(name=name+'_add')([x,input_val])
             if activations is not None:
                 if type(activations) is list:
-                    x = self.return_activation(activations[i])(name=name+'_activation_{}'.format(i))(x)
-                else:
+                    if activations[i] is not 'linear':
+                        x = self.return_activation(activations[i])(name=name+'_activation_{}'.format(i))(x)
+                elif activations is not 'linear':
                     x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
             else:
                 x = self.activation(name=name+'_activation_{}'.format(i))(x)
@@ -362,7 +356,7 @@ class Unet(object):
 
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
-        if 'tranpose' in kwargs:
+        if 'transpose' in kwargs:
             conv_func = self.tranpose_conv
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
         elif 'convolution' in kwargs:
@@ -388,9 +382,9 @@ class Unet(object):
         if self.batch_norm:
             x = BatchNormalization()(x)
         if activate:
-            if activation is not None:
+            if activation is not None and activation is not 'linear':
                 x = self.return_activation(activation)(name=name + '_activation')(x)
-            else:
+            elif activation is not 'linear':
                 x = self.activation(name=name + '_activation')(x)
         return x
     def dict_conv_block(self, x, desc, kernels=None,res_blocks=None,atrous_blocks=None,up_sample_blocks=None,
@@ -497,13 +491,14 @@ class Unet(object):
                 else:
                     self.define_pool_size(self.layers_dict[layer]['Pooling'])
                     x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
-            previous = x
-            if concat:
+
+            if x.shape[-1] == self.layer_vals[layer_index].shape[-1]:
+                x = Add(name='Add_' + desc + str(layer))([x,self.layer_vals[layer_index]])
+                x = self.activation(name='Activate_' + desc + str(layer))(x)
+            elif concat:
                 x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
             all_filters = self.layers_dict[layer]['Decoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
-            if x.shape[-1] == previous.shape[-1]:
-                x = Add(name='Add_' + desc + str(layer))([x,previous])
             self.layer += 1
         return x
 
@@ -981,9 +976,9 @@ class my_3D_UNet(base_UNet):
             output_kernel = (1,1,1)
         x = self.run_unet(x)
         self.save_memory = False
-        self.define_filters(output_kernel)
+        self.define_kernel(output_kernel)
         if self.semantic_segmentation:
-            x = self.conv_block(self.out_classes, x, name='output', activate=False)
+            x = self.conv_block(channels=self.out_classes, x=x, name='output', activate=False)
         if self.final_activation is not None:
             x = Activation(self.final_activation)(x)
         if self.mask_loss or self.mask_output:
