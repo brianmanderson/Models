@@ -182,9 +182,9 @@ class Unet(object):
     def define_batch_norm(self, batch_norm=False):
         self.batch_norm = batch_norm
 
-    def define_filters(self, filters):
-        self.filters = filters
-        if len(filters) == 2:
+    def define_kernel(self, kernel):
+        self.kernel = kernel
+        if len(kernel) == 2:
             self.define_2D_or_3D(True)
         else:
             self.define_2D_or_3D()
@@ -241,44 +241,6 @@ class Unet(object):
             x = self.return_activation(activation)(name=name + '_activation')(x)
         else:
             x = self.activation(name=name + '_activation')(x)
-        return x
-
-    def atrous_block(self, output_size, x, name, rate_blocks=5, activations=None, add=True): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
-        # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
-        rates = []
-        get_new = True
-        input_val = None
-        if x.shape[-1] == output_size:
-            input_val = x
-            get_new = False
-        #     x = input_val = self.conv_block(output_size, x=x, name=name + 'Atrous_' + 'rescale_input', activate=True,
-        #                                     filters=self.filters)
-        # else:
-        #     input_val = x
-        for rate_block in range(rate_blocks):
-            rate = []
-            for i in range(len(self.filters)):
-                rate.append(self.filters[i]**(rate_block)) # not plus 1 minus 1, since we are 0 indexed
-            # if len(rate) == 3 and rate[0] > 9:
-            #     rate[0] = 9
-            rates.append(rate)
-        for i, rate in enumerate(rates):
-            temp_name = name + 'Atrous_' + str(rate[-1])
-            x = self.conv_block(output_size=output_size,x=x,name=temp_name,dialation_rate=rate,activate=False, filters=self.filters)
-            # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
-            if self.batch_norm:
-                x = BatchNormalization()(x)
-            if i == len(rates)-1 and input_val is not None and add:
-                x = Add(name=name+'_add')([x,input_val])
-            if activations is not None:
-                if type(activations) is list:
-                    x = self.return_activation(activations[i])(name=name+'_activation_{}'.format(i))(x)
-                else:
-                    x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
-            else:
-                x = self.activation(name=name+'_activation_{}'.format(i))(x)
-            if i == 0 and get_new:
-                input_val = x
         return x
 
     def strided_conv_block(self, output_size, x, name, strides=(2,2,2)):
@@ -362,37 +324,74 @@ class Unet(object):
             self.layer += 1
         return x
 
-    def dict_block(self, x, passed_dictionary,name=None):
-        if 'tranpose' in passed_dictionary:
-            conv_func = self.tranpose_conv
-        else:
-            conv_func = self.conv
-        x = self.conv_block(x,conv_func=conv_func,name=name,**passed_dictionary)
+    def atrous_block(self, x, name, channels=None, kernel=None,atrous_rate=5, activations=None, add=True, **kwargs): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
+        # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
+        if kernel is None:
+            kernel = self.kernel
+        rates = []
+        get_new = True
+        input_val = None
+        if x.shape[-1] == channels:
+            input_val = x
+            get_new = False
+        for rate_block in range(atrous_rate):
+            rate = []
+            for i in range(len(self.filters)):
+                rate.append(self.filters[i]**(rate_block)) # not plus 1 minus 1, since we are 0 indexed
+            # if len(rate) == 3 and rate[0] > 9:
+            #     rate[0] = 9
+            rates.append(rate)
+        for i, rate in enumerate(rates):
+            temp_name = name + 'Atrous_' + str(rate[-1])
+            x = self.conv_block(output_size=channels,x=x,name=temp_name,dialation_rate=rate,activate=False, kernel=kernel)
+            # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
+            if self.batch_norm:
+                x = BatchNormalization()(x)
+            if i == len(rates)-1 and input_val is not None and add:
+                x = Add(name=name+'_add')([x,input_val])
+            if activations is not None:
+                if type(activations) is list:
+                    x = self.return_activation(activations[i])(name=name+'_activation_{}'.format(i))(x)
+                else:
+                    x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
+            else:
+                x = self.activation(name=name+'_activation_{}'.format(i))(x)
+            if i == 0 and get_new:
+                input_val = x
         return x
 
-    def conv_block(self,x,filters=None,kernel_size=None,name=None, strides=None, dialation_rate=1,conv_func=None,
-                   activation=None):
+    def dict_block(self, x, name=None, **kwargs):
+        conv_func = self.conv
+        if 'tranpose' in kwargs:
+            conv_func = self.tranpose_conv
+            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
+        elif 'convolution' in kwargs:
+            x = self.conv_block(x,conv_func=conv_func,name=name,**kwargs['convolution'])
+        elif 'atrous' in kwargs:
+            x = self.atrous_block(x, name=name,**kwargs['atrous'])
+        else:
+            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs)
+        return x
+
+    def conv_block(self,x,channels=None,kernel=None,name=None, strides=None, dialation_rate=1,conv_func=None,
+                   activation=None,activate=True, **kwargs):
         if strides is None:
             strides = 1
         if conv_func is None:
             conv_func = self.conv
-        if filters is None:
-            filters = self.filters
-        if len(filters) + 1 == len(x.shape):
-            self.define_2D_or_3D(is_2D=False)
-            x = ExpandDimension(0)(x)
-        elif len(filters) + 2 < len(x.shape):
-            self.define_2D_or_3D(True)
-            x = SqueezeDimension(0)(x)
-        x = conv_func(filters, kernel_size=kernel_size,activation=None, padding=self.padding,
+        assert channels is not None, 'Need to provide "channels"'
+        if kernel is None:
+            kernel = self.kernel
+        x = conv_func(channels, kernel_size=kernel,activation=None, padding=self.padding,
                       name=name, strides=strides, dilation_rate=dialation_rate)(x)
 
         if self.batch_norm:
             x = BatchNormalization()(x)
-        if activation is not None:
-            x = self.return_activation(activation)(name=name + '_activation')(x)
-        else:
-            x = self.activation(name=name + '_activation')(x)
+        if activate:
+            if activation is not None:
+                x = self.return_activation(activation)(name=name + '_activation')(x)
+            else:
+                x = self.activation(name=name + '_activation')(x)
         return x
     def dict_conv_block(self, x, desc, kernels=None,res_blocks=None,atrous_blocks=None,up_sample_blocks=None,
                         down_sample_blocks=None,activations=None,strides=None,channels=None,type='Conv',**kwargs):
@@ -448,8 +447,8 @@ class Unet(object):
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
         if type(layer_dict) == list:
-            for i, filters in enumerate(layer_dict):
-                x = self.dict_block(x, name=layer + '_' + desc + '_' + str(i), **filters)
+            for i, dictionary in enumerate(layer_dict):
+                x = self.dict_block(x, name=layer + '_' + desc + '_' + str(i), **dictionary)
         else:
             x = self.dict_block(x, name=layer + '_' + desc + '_', **layer_dict)
         return x
@@ -510,7 +509,7 @@ class Unet(object):
 
 
 class base_UNet(Unet):
-    def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),activation='elu', pool_type='Max',
+    def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),activation='elu', pool_type='Max',
                  batch_norm=False,is_2D=False,save_memory=False):
         super().__init__(save_memory=save_memory)
         self.layer_vals = {}
@@ -518,7 +517,7 @@ class base_UNet(Unet):
         self.define_unet_dict(layers_dict)
         self.define_pool_size(pool_size)
         self.define_batch_norm(batch_norm)
-        self.define_filters(filter_vals)
+        self.define_kernel(kernel)
         self.define_activation(activation)
         self.define_padding('same')
         self.define_pooling_type(pool_type)
@@ -944,7 +943,7 @@ class BilinearUpsampling3D(Layer):
 
 class my_3D_UNet(base_UNet):
 
-    def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
+    def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
                  batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_output=False, image_size=None,
                  custom_loss=None, mask_loss=False):
         self.mask_loss = mask_loss
@@ -961,7 +960,7 @@ class my_3D_UNet(base_UNet):
         self.is_2D = is_2D
         self.input_size = input_size
         self.create_model = create_model
-        super().__init__(filter_vals=filter_vals, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
+        super().__init__(kernel=kernel, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
                          pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory)
         self.striding_not_pooling = striding_not_pooling
         self.out_classes = out_classes
