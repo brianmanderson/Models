@@ -494,7 +494,7 @@ class Unet(object):
                     x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
                     if x.shape[-1] != self.layer_vals[layer_index].shape[-1] and not self.concat_not_add:
                         x = self.conv_block(x,channels=self.layer_vals[layer_index].shape[-1],name='Conv_' + desc + str(layer))
-            if x.shape[-1] == self.layer_vals[layer_index].shape[-1]:
+            if x.shape[-1] == self.layer_vals[layer_index].shape[-1] and not self.concat_not_add:
                 x = Add(name='Add_' + desc + str(layer))([x,self.layer_vals[layer_index]])
                 x = self.activation(name='Activate_' + desc + str(layer))(x)
             elif concat:
