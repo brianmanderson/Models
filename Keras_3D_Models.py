@@ -376,7 +376,7 @@ class Unet(object):
         assert channels is not None, 'Need to provide "channels"'
         if kernel is None:
             kernel = self.kernel
-        x = conv_func(channels, kernel_size=kernel,activation=None, padding=self.padding,
+        x = conv_func(int(channels), kernel_size=kernel,activation=None, padding=self.padding,
                       name=name, strides=strides, dilation_rate=dialation_rate)(x)
 
         if self.batch_norm:
@@ -461,16 +461,15 @@ class Unet(object):
             all_filters = self.layers_dict[layer]['Encoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer_vals[layer_index] = x
-            if 'Pooling' not in self.layers_dict[layer] or ('Pooling' in self.layers_dict[layer] and self.layers_dict[layer]['Pooling'] is not None):
+            if 'Pooling' in self.layers_dict[layer] or ('Pooling' in self.layers_dict[layer] and self.layers_dict[layer]['Pooling'] is not None):
                 if 'Encoding' in self.layers_dict[layer]['Pooling']:
                     x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Encoding'], layer, 'strided_conv')
                 else:
-                    if 'Pooling' in self.layers_dict[layer]:
-                        self.define_pool_size(self.layers_dict[layer]['Pooling'])
-                    if 'Pooling_Type' in self.layers_dict[layer]:
-                        self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
-                    if len(self.layers_names) > 1:
-                        x = self.pooling_down_block(x, layer + '_Pooling')
+                    self.define_pool_size(self.layers_dict[layer]['Pooling'])
+                if 'Pooling_Type' in self.layers_dict[layer]:
+                    self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
+                if len(self.layers_names) > 1:
+                    x = self.pooling_down_block(x, layer + '_Pooling')
             layer_index += 1
         concat = False
         if 'Base' in self.layers_dict:
@@ -489,9 +488,11 @@ class Unet(object):
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
                     x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'], layer, 'transpose_conv')
                 else:
-                    self.define_pool_size(self.layers_dict[layer]['Pooling'])
+                    if 'Pool_Size' in self.layers_dict[layer]['Pooling']:
+                        self.define_pool_size(self.layers_dict[layer]['Pooling']['Pool_Size'])
                     x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
-
+                    if x.shape[-1] != self.layer_vals[layer_index].shape[-1]:
+                        x = self.conv_block(x,channels=self.layer_vals[layer_index].shape[-1],name='Conv_' + desc + str(layer))
             if x.shape[-1] == self.layer_vals[layer_index].shape[-1]:
                 x = Add(name='Add_' + desc + str(layer))([x,self.layer_vals[layer_index]])
                 x = self.activation(name='Activate_' + desc + str(layer))(x)
@@ -936,8 +937,8 @@ class BilinearUpsampling3D(Layer):
         base_config = super(BilinearUpsampling3D, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-class my_3D_UNet(base_UNet):
 
+class my_3D_UNet(base_UNet):
     def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
                  batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_output=False, image_size=None,
                  custom_loss=None, mask_loss=False):
