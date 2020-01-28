@@ -83,12 +83,13 @@ class ClusteringLayer(Layer):
 
 class Unet(object):
 
-    def __init__(self,save_memory=False):
+    def __init__(self,save_memory=False, concat_not_add=True):
         self.previous_conv = None
+        self.concat_not_add = concat_not_add
         self.save_memory = save_memory
+
     def define_res_block(self,do_res_block=False):
         self.do_res_block = do_res_block
-
 
     def define_unet_dict(self, layers_dict):
         self.layers_dict = layers_dict
@@ -491,7 +492,7 @@ class Unet(object):
                     if 'Pool_Size' in self.layers_dict[layer]['Pooling']:
                         self.define_pool_size(self.layers_dict[layer]['Pooling']['Pool_Size'])
                     x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
-                    if x.shape[-1] != self.layer_vals[layer_index].shape[-1]:
+                    if x.shape[-1] != self.layer_vals[layer_index].shape[-1] and not self.concat_not_add:
                         x = self.conv_block(x,channels=self.layer_vals[layer_index].shape[-1],name='Conv_' + desc + str(layer))
             if x.shape[-1] == self.layer_vals[layer_index].shape[-1]:
                 x = Add(name='Add_' + desc + str(layer))([x,self.layer_vals[layer_index]])
@@ -506,8 +507,8 @@ class Unet(object):
 
 class base_UNet(Unet):
     def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),activation='elu', pool_type='Max',
-                 batch_norm=False,is_2D=False,save_memory=False):
-        super().__init__(save_memory=save_memory)
+                 batch_norm=False,is_2D=False,save_memory=False,concat_not_add=True):
+        super().__init__(save_memory=save_memory, concat_not_add=concat_not_add)
         self.layer_vals = {}
         self.define_2D_or_3D(is_2D)
         self.define_unet_dict(layers_dict)
@@ -957,7 +958,7 @@ class my_3D_UNet(base_UNet):
         self.input_size = input_size
         self.create_model = create_model
         super().__init__(kernel=kernel, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
-                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory)
+                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory,concat_not_add=True)
         self.striding_not_pooling = striding_not_pooling
         self.out_classes = out_classes
         self.mask_output = mask_output
