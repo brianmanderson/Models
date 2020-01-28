@@ -466,11 +466,12 @@ class Unet(object):
                 if 'Encoding' in self.layers_dict[layer]['Pooling']:
                     x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Encoding'], layer, 'strided_conv')
                 else:
-                    self.define_pool_size(self.layers_dict[layer]['Pooling'])
-                if 'Pooling_Type' in self.layers_dict[layer]:
-                    self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
-                if len(self.layers_names) > 1:
-                    x = self.pooling_down_block(x, layer + '_Pooling')
+                    if 'Pool_Size' in self.layers_dict[layer]['Pooling']:
+                        self.define_pool_size(self.layers_dict[layer]['Pooling']['Pool_Size'])
+                    if 'Pooling_Type' in self.layers_dict[layer]:
+                        self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
+                    if len(self.layers_names) > 1:
+                        x = self.pooling_down_block(x, layer + '_Pooling')
             layer_index += 1
         concat = False
         if 'Base' in self.layers_dict:
