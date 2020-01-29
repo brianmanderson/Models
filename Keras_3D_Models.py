@@ -943,7 +943,7 @@ class BilinearUpsampling3D(Layer):
 class my_3D_UNet(base_UNet):
     def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
                  batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_output=False, image_size=None,
-                 custom_loss=None, mask_loss=False):
+                 custom_loss=None, mask_loss=False, concat_not_add=True):
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
         self.noise = noise
@@ -959,7 +959,7 @@ class my_3D_UNet(base_UNet):
         self.input_size = input_size
         self.create_model = create_model
         super().__init__(kernel=kernel, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
-                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory,concat_not_add=True)
+                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory,concat_not_add=concat_not_add)
         self.striding_not_pooling = striding_not_pooling
         self.out_classes = out_classes
         self.mask_output = mask_output
