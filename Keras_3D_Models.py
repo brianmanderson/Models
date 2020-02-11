@@ -1,12 +1,11 @@
-from keras.models import Model
-import keras.backend as K
+from tensorflow.keras.models import Model
+import tensorflow.keras.backend as K
 import tensorflow as tf
-from keras.backend import variable
-from keras.layers import *
-from keras.initializers import RandomNormal
-from keras.models import load_model
+from tensorflow.keras.backend import variable
+from tensorflow.keras.layers import *
+from tensorflow.keras.initializers import RandomNormal
+from tensorflow.keras.models import load_model
 from functools import partial, update_wrapper
-from keras.utils import conv_utils
 import numpy as np
 
 
@@ -946,7 +945,6 @@ class my_3D_UNet(base_UNet):
                  custom_loss=None, mask_loss=False, concat_not_add=True):
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
-        self.noise = noise
         self.semantic_segmentation = semantic_segmentation
         self.complete_input = complete_input
         self.image_size = image_size
@@ -1055,13 +1053,13 @@ class my_3D_UNet_dvf_w_images(base_UNet):
         flow = Conv3D(3, kernel_size=self.filters, padding='same', name='flow',
                       kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5))(x)
         # kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5)
-        y = nrn_layers.SpatialTransformer(interp_method='linear', indexing='ij')([image_input_primary, flow])
-        model = Model(inputs=[image_input_primary,image_input_secondary,weights_tensor], outputs=y)
-        self.created_model = model
+        # y = nrn_layers.SpatialTransformer(interp_method='linear', indexing='ij')([image_input_primary, flow])
+        # model = Model(inputs=[image_input_primary,image_input_secondary,weights_tensor], outputs=y)
+        # self.created_model = model
         # partial(weighted_mse, weights=weights_tensor)
         # self.custom_loss = wrapped_partial(weighted_mse,weights=weights_tensor))
-        partial_func = partial(weighted_mse, weights=weights_tensor)
-        self.custom_loss = update_wrapper(partial_func, weighted_mse)
+        # partial_func = partial(weighted_mse, weights=weights_tensor)
+        # self.custom_loss = update_wrapper(partial_func, weighted_mse)
 
 
 class my_3D_UNet_dvf_multi_pooling(base_UNet):
@@ -1613,59 +1611,6 @@ class Pyramid_Pool_3D(object):
         self.data_dict[self.image_resolution]['last_layer'] = x
 
 
-class Attrous_3D(object):
-
-    def __init__(self, image_size=25, batch_size=32, channels=3, filter_vals=None,num_of_classes=2,num_layers=2):
-        if filter_vals is None:
-            filter_vals = [5,5,5]
-        self.pool_size = (2,2,2)
-        self.filter_vals = filter_vals
-        self.channels = channels
-        self.image_size = image_size
-        self.num_of_classes = num_of_classes
-        self.num_layers = num_layers
-        self.batch_size = batch_size
-        self.activation = 'relu'
-        self.unet()
-
-    def atrous_conv_block(self, prefix,x,rate,drop=0.0, kernel_size=3, stride=1, epsilon=1e-3):
-        if stride == 1:
-            depth_padding = 'same'
-        else:
-            kernel_size_effective = kernel_size + (kernel_size - 1) * (rate - 1)
-            pad_total = kernel_size_effective - 1
-            pad_beg = pad_total // 2
-            pad_end = pad_total - pad_beg
-            x = ZeroPadding3D((pad_beg, pad_end, pad_end))(x)
-            depth_padding = 'valid'
-        x = Conv3D((kernel_size, kernel_size, kernel_size), strides=(stride, stride, stride), dilation_rate=(rate, rate, rate),
-                            padding=depth_padding, use_bias=False, name=prefix + '_3Dconv')(x)
-        x = BatchNormalization(name=prefix + '_3Dconv_BN', epsilon=epsilon)(x)
-        x = Activation('relu')(x)
-        if drop > 0.0:
-            x = SpatialDropout3D(drop)(x)
-        return x
-
-    def unet(self):
-        x = input_image = Input([16, 32, 32, 1])
-        self.filters = (self.filter_vals[0], self.filter_vals[1], self.filter_vals[2])
-        self.layer = 1
-        layer_vals = {}
-        block = 30
-        drop_out = 0.0
-        for i in range(self.num_layers):
-            block += 10
-            rate_1 = self.atrous_conv_block('block_' + str(i), rate=1, drop=drop_out, x=x)
-            rate_2 = self.atrous_conv_block('block_' + str(i), rate=2, drop=drop_out, x=x)
-            x = Concatenate()([rate_1,rate_2])
-
-            drop_out = 0.2
-        x = self.residual_block(int(150), x_concat, drop=drop_out)
-        x = Conv3D(self.num_of_classes, (1, 1, 1), padding='same', name='last_layer')(x)
-        x = Activation('softmax')(x)
-        self.model = Model(inputs=[fine_image,coarse_image], outputs=[x], name='DeepMedic')
-
-
 class TDLSTM_Conv(object):
     def __init__(self, input_batch=16,input_image=256,input_channels=33, start_block=64, layers=2):
         self.input_image = input_image
@@ -1765,184 +1710,6 @@ class TDLSTM_Conv(object):
         self.created_model = Model(input_image, outputs=[output])
         return None
 
-class VGG16_class(object):
-
-    def __init__(self):
-        self.trainable = False
-        self.activation = 'relu'
-        self.filters = 64
-        self.block = 1
-        self.drop_out = 0.0
-
-    def conv_block(self, x):
-        for layer in range(1,self.layers+1):
-            x = Conv2D(self.filters, (3, 3), activation=None, padding='same', name='block' + str(self.block) + '_conv'+str(layer),
-                       trainable=self.trainable)(x)
-            x = Activation(self.activation)(x)
-            x = BatchNormalization()(x)
-            if self.drop_out > 0.0:
-                x = SpatialDropout2D(0.2)(x)
-        return x
-
-    def VGG16(self,include_top=True, weights='imagenet',
-              input_tensor=None, input_shape=None,
-              pooling=None,
-              classes=1000, only_vals=False, use_3d_unet=False, trainable=True):
-        """Instantiates the VGG16 architecture.
-
-        Optionally loads weights pre-trained
-        on ImageNet. Note that when using TensorFlow,
-        for best performance you should set
-        `image_data_format='channels_last'` in your Keras config
-        at ~/.keras/keras.json.
-
-        The model and the weights are compatible with both
-        TensorFlow and Theano. The data format
-        convention used by the model is the one
-        specified in your Keras config file.
-
-        # Arguments
-            include_top: whether to include the 3 fully-connected
-                layers at the top of the network.
-            weights: one of `None` (random initialization),
-                  'imagenet' (pre-training on ImageNet),
-                  or the path to the weights file to be loaded.
-            input_tensor: optional Keras tensor (i.e. output of `layers.Input()`)
-                to use as image input for the model.
-            input_shape: optional shape tuple, only to be specified
-                if `include_top` is False (otherwise the input shape
-                has to be `(224, 224, 3)` (with `channels_last` data format)
-                or `(3, 224, 224)` (with `channels_first` data format).
-                It should have exactly 3 input channels,
-                and width and height should be no smaller than 48.
-                E.g. `(200, 200, 3)` would be one valid value.
-            pooling: Optional pooling mode for feature extraction
-                when `include_top` is `False`.
-                - `None` means that the output of the model will be
-                    the 4D tensor output of the
-                    last convolutional layer.
-                - `avg` means that global average pooling
-                    will be applied to the output of the
-                    last convolutional layer, and thus
-                    the output of the model will be a 2D tensor.
-                - `max` means that global max pooling will
-                    be applied.
-            classes: optional number of classes to classify images
-                into, only to be specified if `include_top` is True, and
-                if no `weights` argument is specified.
-
-        # Returns
-            A Keras model instance.
-
-        # Raises
-            ValueError: in case of invalid argument for `weights`,
-                or invalid input shape.
-        """
-        WEIGHTS_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels.h5'
-        WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
-
-        if not (weights in {'imagenet', None} or os.path.exists(weights)):
-            raise ValueError('The `weights` argument should be either '
-                             '`None` (random initialization), `imagenet` '
-                             '(pre-training on ImageNet), '
-                             'or the path to the weights file to be loaded.')
-
-        if weights == 'imagenet' and include_top and classes != 1000:
-            raise ValueError('If using `weights` as imagenet with `include_top`'
-                             ' as true, `classes` should be 1000')
-        # Determine proper input shape
-        input_shape = _obtain_input_shape(input_shape,
-                                          default_size=224,
-                                          min_size=48,
-                                          data_format=K.image_data_format(),
-                                          require_flatten=include_top,
-                                          weights=weights)
-
-        if input_tensor is None:
-            img_input = Input(shape=input_shape)
-        else:
-            if not K.is_keras_tensor(input_tensor):
-                img_input = Input(tensor=input_tensor, shape=input_shape)
-            else:
-                img_input = input_tensor
-        # Block 1
-        net = {}
-        layout = [2,2,3,3,3]
-        x = img_input
-        for self.block in range(1,6):
-            if self.block > 2 and trainable:
-                self.trainable = True # Freeze the first 2 layers
-            if self.trainable:
-                self.drop_out = 0.0
-            self.layers = layout[self.block-1]
-            x = self.conv_block(x)
-            if self.filters < 512:
-                self.filters *= 2
-            # if use_3d_unet:
-            #     net['conv_block' + str(self.block) + '_pool'] = x
-            net['block' + str(self.block) + '_pool'] = x
-            if self.block < 5:
-                x = MaxPooling2D((2, 2), strides=(2, 2), name='block' + str(self.block) + '_pool')(x)
-
-        if only_vals:
-            return img_input, x, net
-        if include_top:
-            # Classification block
-            x = Flatten(name='flatten')(x)
-            x = Dense(4096, activation='relu', name='fc1')(x)
-            x = Dense(4096, activation='relu', name='fc2')(x)
-            x = Dense(classes, activation='softmax', name='predictions')(x)
-        else:
-            if pooling == 'avg':
-                x = GlobalAveragePooling2D()(x)
-            elif pooling == 'max':
-                x = GlobalMaxPooling2D()(x)
-
-        # Ensure that the model takes into account
-        # any potential predecessors of `input_tensor`.
-        if input_tensor is not None:
-            inputs = get_source_inputs(input_tensor)
-        else:
-            inputs = img_input
-        # Create model.
-        model = Model(inputs, x, name='vgg16')
-
-        # load weights
-        if weights == 'imagenet':
-            if include_top:
-                weights_path = get_file('vgg16_weights_tf_dim_ordering_tf_kernels.h5',
-                                        WEIGHTS_PATH,
-                                        cache_subdir='models',
-                                        file_hash='64373286793e3c8b2b4e3219cbf3544b')
-            else:
-                weights_path = get_file('vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5',
-                                        WEIGHTS_PATH_NO_TOP,
-                                        cache_subdir='models',
-                                        file_hash='6d6bbae143d832006294945121d1f1fc')
-            model.load_weights(weights_path)
-            if K.backend() == 'theano':
-                layer_utils.convert_all_kernels_in_model(model)
-
-            if K.image_data_format() == 'channels_first':
-                if include_top:
-                    maxpool = model.get_layer(name='block5_pool')
-                    shape = maxpool.output_shape[1:]
-                    dense = model.get_layer(name='fc1')
-                    layer_utils.convert_dense_weights_data_format(dense, shape, 'channels_first')
-
-                if K.backend() == 'tensorflow':
-                    warnings.warn('You are using the TensorFlow backend, yet you '
-                                  'are using the Theano '
-                                  'image data format convention '
-                                  '(`image_data_format="channels_first"`). '
-                                  'For best performance, set '
-                                  '`image_data_format="channels_last"` in '
-                                  'your Keras config '
-                                  'at ~/.keras/keras.json.')
-        elif weights is not None:
-            model.load_weights(weights)
-
-        return model
 
 if __name__ == '__main__':
     xxx = 1
