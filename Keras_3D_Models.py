@@ -1,10 +1,10 @@
-from tensorflow.keras.models import Model
-import tensorflow.keras.backend as K
+from tensorflow.python.keras.models import Model
+import tensorflow.python.keras.backend as K
 import tensorflow as tf
-from tensorflow.keras.backend import variable
-from tensorflow.keras.layers import *
-from tensorflow.keras.initializers import RandomNormal
-from tensorflow.keras.models import load_model
+from tensorflow.python.keras.backend import variable
+from tensorflow.python.keras.layers import *
+from tensorflow.python.keras.initializers import RandomNormal
+from tensorflow.python.keras.models import load_model
 from functools import partial, update_wrapper
 import numpy as np
 
