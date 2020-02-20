@@ -10,7 +10,6 @@
     residual_block = lambda x: {'residual':x}
     pooling_upsampling = {'Encoding':{'Pool_Size':(2,2),'Pooling_Type':'Max'},
                           'Decoding':{'Pool_Size':(2,2)}}
-    filters = 16
     encoding = [conv_block(32),conv_block(32)]
     decoding = [conv_block(64), conv_block(64)]
     layers_dict['Layer_0'] = {'Encoding':residual_block(encoding),'Decoding':residual_block(decoding),
