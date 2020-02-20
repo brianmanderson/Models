@@ -416,7 +416,7 @@ class Unet(object):
         concat = False
         if 'Base' in self.layers_dict:
             concat = True
-            all_filters = self.layers_dict['Base']['Encoding']
+            all_filters = self.layers_dict['Base']
             x = self.run_filter_dict(x, all_filters, 'Base_', '')
         desc = 'Decoder'
         self.layer = 0
