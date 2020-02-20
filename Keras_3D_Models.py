@@ -404,8 +404,8 @@ class Unet(object):
             self.layer_vals[layer_index] = x
             if 'Pooling' in self.layers_dict[layer] or ('Pooling' in self.layers_dict[layer] and self.layers_dict[layer]['Pooling'] is not None):
                 if 'Encoding' in self.layers_dict[layer]['Pooling']:
-                    x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Encoding'], layer, 'strided_conv')
-                else:
+                    # x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Encoding'], layer, 'strided_conv')
+                # else:
                     if 'Pool_Size' in self.layers_dict[layer]['Pooling']:
                         self.define_pool_size(self.layers_dict[layer]['Pooling']['Pool_Size'])
                     if 'Pooling_Type' in self.layers_dict[layer]:
@@ -428,8 +428,8 @@ class Unet(object):
             layer_index -= 1
             if 'Pooling' in self.layers_dict[layer]:
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
-                    x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'], layer, 'transpose_conv')
-                else:
+                    # x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'], layer, 'transpose_conv')
+                # else:
                     if 'Pool_Size' in self.layers_dict[layer]['Pooling']:
                         self.define_pool_size(self.layers_dict[layer]['Pooling']['Pool_Size'])
                     x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
