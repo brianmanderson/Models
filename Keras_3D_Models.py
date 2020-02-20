@@ -142,7 +142,7 @@ class Unet(object):
             self.activation = activation
 
     def return_activation(self, activation):
-        normal_activations = ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh']
+        normal_activations = ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
         if type(activation) is str and activation.lower() in normal_activations:
             activation = partial(Activation,activation)
         elif type(activation) is dict:
@@ -263,16 +263,10 @@ class Unet(object):
             self.layer += 1
         return x
 
-    def atrous_block(self, x, name, channels=None, kernel=None,atrous_rate=5, activations=None, residual=True, **kwargs): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
+    def atrous_block(self, x, name, channels=None, kernel=None,atrous_rate=5, activations=None, **kwargs): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
-        if residual:
-            input_val = x
-            if x.shape[-1] != channels:
-                ones_kernel = tuple([1 for _ in range(len(kernel))])
-                input_val = self.conv_block(channels=channels, x=x, name='{}_Atrous_Reshape'.format(name), activate=False,
-                                            kernel=ones_kernel)
         rates = [[kernel[i]**rate_block for i in range(len(kernel))] for rate_block in range(atrous_rate)]
         x = self.activation(name='{}_pre_activation'.format(name))(x)
         for i, rate in enumerate(rates):
@@ -290,16 +284,14 @@ class Unet(object):
                         x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
                 else:
                     x = self.activation(name=name+'_activation_{}'.format(i))(x)
-        if residual:
-            x = Add(name=name + '_add')([x, input_val])
         return x
 
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
         if 'residual' in kwargs:
             input_val = x
-            for i, dictionary in enumerate(kwargs):
-                x = self.dict_block(x, name={'{}_residual_layer_{}'.format(name,i)}, **dictionary)
+            sub_modules = kwargs['residual']
+            x = self.run_filter_dict(x, sub_modules, name, 'Residual')
             if x.shape[-1] != input_val.shape[-1]:
                 ones_kernel = tuple([1 for _ in range(len(self.kernel))])
                 input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name), activate=False,
@@ -404,7 +396,7 @@ class Unet(object):
         layer_order = []
         for layer in self.layers_names:
             print(layer)
-            if layer == 'Base':
+            if layer.find('Layer') == -1:
                 continue
             layer_order.append(layer)
             all_filters = self.layers_dict[layer]['Encoding']
@@ -430,7 +422,7 @@ class Unet(object):
         self.layer = 0
         layer_order.reverse()
         for layer in layer_order:
-            if 'Decoding' not in self.layers_dict[layer]:
+            if layer.find('Layer') == -1 or 'Decoding' not in self.layers_dict[layer]:
                 continue
             print(layer)
             layer_index -= 1
@@ -451,6 +443,8 @@ class Unet(object):
             all_filters = self.layers_dict[layer]['Decoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer += 1
+        if 'Final_Steps' in self.layers_dict:
+            x = self.run_filter_dict(x, self.layers_dict['Final_Steps'], 'Final_Steps', '')
         return x
 
 
@@ -506,17 +500,7 @@ class my_3D_UNet(base_UNet):
                 image_input_primary = x = Input(shape=(self.z_images, self.image_size, self.image_size, self.input_size), name='UNet_Input')
         else:
             image_input_primary = x = self.complete_input
-        if self.is_2D:
-            output_kernel = (1,1)
-        else:
-            output_kernel = (1,1,1)
         x = self.run_unet(x)
-        self.save_memory = False
-        self.define_kernel(output_kernel)
-        if self.semantic_segmentation:
-            x = self.conv_block(channels=self.out_classes, x=x, name='output', activate=False)
-        if self.final_activation is not None:
-            x = Activation(self.final_activation)(x)
         if self.mask_loss or self.mask_output:
             self.mask = Input(shape=(None,None,None,self.out_classes),name='mask')
             self.sum_vals = Input(shape=(None, None, None, self.out_classes), name='sum_vals')
