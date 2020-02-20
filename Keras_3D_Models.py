@@ -20,67 +20,6 @@ def wrapped_partial(func, *args, **kwargs):
     return partial_func
 
 
-class ClusteringLayer(Layer):
-    """
-    Clustering layer converts input sample (feature) to soft label, i.e. a vector that represents the probability of the
-    sample belonging to each cluster. The probability is calculated with student's t-distribution.
-
-    # Example
-    ```
-        model.add(ClusteringLayer(n_clusters=10))
-    ```
-    # Arguments
-        n_clusters: number of clusters.
-        weights: list of Numpy array with shape `(n_clusters, n_features)` witch represents the initial cluster centers.
-        alpha: parameter in Student's t-distribution. Default to 1.0.
-    # Input shape
-        2D tensor with shape: `(n_samples, n_features)`.
-    # Output shape
-        2D tensor with shape: `(n_samples, n_clusters)`.
-    """
-
-    def __init__(self, n_clusters, weights=None, alpha=1.0, **kwargs):
-        if 'input_shape' not in kwargs and 'input_dim' in kwargs:
-            kwargs['input_shape'] = (kwargs.pop('input_dim'),)
-        super(ClusteringLayer, self).__init__(**kwargs)
-        self.n_clusters = n_clusters
-        self.alpha = alpha
-        self.initial_weights = weights
-        self.input_spec = InputSpec(ndim=2)
-
-    def build(self, input_shape):
-        assert len(input_shape) == 2
-        input_dim = input_shape[1]
-        self.input_spec = InputSpec(dtype=K.floatx(), shape=(None, input_dim))
-        self.clusters = self.add_weight((self.n_clusters, input_dim), initializer='glorot_uniform', name='clusters')
-        if self.initial_weights is not None:
-            self.set_weights(self.initial_weights)
-            del self.initial_weights
-        self.built = True
-
-    def call(self, inputs, **kwargs):
-        """ student t-distribution, as same as used in t-SNE algorithm.
-                 q_ij = 1/(1+dist(x_i, u_j)^2), then normalize it.
-        Arguments:
-            inputs: the variable containing data, shape=(n_samples, n_features)
-        Return:
-            q: student's t-distribution, or soft labels for each sample. shape=(n_samples, n_clusters)
-        """
-        q = 1.0 / (1.0 + (K.sum(K.square(K.expand_dims(inputs, axis=1) - self.clusters), axis=2) / self.alpha))
-        q **= (self.alpha + 1.0) / 2.0
-        q = K.transpose(K.transpose(q) / K.sum(q, axis=1))
-        return q
-
-    def compute_output_shape(self, input_shape):
-        assert input_shape and len(input_shape) == 2
-        return input_shape[0], self.n_clusters
-
-    def get_config(self):
-        config = {'n_clusters': self.n_clusters}
-        base_config = super(ClusteringLayer, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-
 class Unet(object):
 
     def __init__(self,save_memory=False, concat_not_add=True):
@@ -203,7 +142,7 @@ class Unet(object):
             self.activation = activation
 
     def return_activation(self, activation):
-        normal_activations = ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh']
+        normal_activations = ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
         if type(activation) is str and activation.lower() in normal_activations:
             activation = partial(Activation,activation)
         elif type(activation) is dict:
@@ -222,7 +161,6 @@ class Unet(object):
         self.padding = padding
 
     def residual_block(self, output_size,x,name,blocks=0, activation=None):
-        # This used to be input_val is the convolution
         if x.shape[-1] != output_size:
             x = self.conv_block(output_size,x=x,name=name + '_' + 'rescale_input',activate=False,filters=self.filters)
             if activation is not None:
@@ -325,39 +263,41 @@ class Unet(object):
             self.layer += 1
         return x
 
-    def atrous_block(self, x, name, channels=None, kernel=None,atrous_rate=5, activations=None, add=True, **kwargs): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
+    def atrous_block(self, x, name, channels=None, kernel=None,atrous_rate=5, activations=None, **kwargs): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
-        get_new = True
-        input_val = None
-        if x.shape[-1] == channels:
-            input_val = x
-            get_new = False
         rates = [[kernel[i]**rate_block for i in range(len(kernel))] for rate_block in range(atrous_rate)]
+        x = self.activation(name='{}_pre_activation'.format(name))(x)
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
             x = self.conv_block(channels=channels,x=x,name=temp_name,dialation_rate=rate,activate=False, kernel=kernel)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if self.batch_norm:
                 x = BatchNormalization()(x)
-            if i == len(rates)-1 and input_val is not None and add:
-                x = Add(name=name+'_add')([x,input_val])
-            if activations is not None:
-                if type(activations) is list:
-                    if activations[i] is not 'linear':
-                        x = self.return_activation(activations[i])(name=name+'_activation_{}'.format(i))(x)
-                elif activations is not 'linear':
-                    x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
-            else:
-                x = self.activation(name=name+'_activation_{}'.format(i))(x)
-            if i == 0 and get_new:
-                input_val = x
+            if i != len(rates) - 1: # Don't activate last one
+                if activations is not None:
+                    if type(activations) is list:
+                        if activations[i] is not 'linear':
+                            x = self.return_activation(activations[i])(name=name+'_activation_{}'.format(i))(x)
+                    elif activations is not 'linear':
+                        x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
+                else:
+                    x = self.activation(name=name+'_activation_{}'.format(i))(x)
         return x
 
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
-        if 'transpose' in kwargs:
+        if 'residual' in kwargs:
+            input_val = x
+            sub_modules = kwargs['residual']
+            x = self.run_filter_dict(x, sub_modules, name, 'Residual')
+            if x.shape[-1] != input_val.shape[-1]:
+                ones_kernel = tuple([1 for _ in range(len(self.kernel))])
+                input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name), activate=False,
+                                            kernel=ones_kernel)
+            x = Add(name=name + '_add')([x, input_val])
+        elif 'transpose' in kwargs:
             conv_func = self.tranpose_conv
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
         elif 'convolution' in kwargs:
@@ -456,7 +396,7 @@ class Unet(object):
         layer_order = []
         for layer in self.layers_names:
             print(layer)
-            if layer == 'Base':
+            if layer.find('Layer') == -1:
                 continue
             layer_order.append(layer)
             all_filters = self.layers_dict[layer]['Encoding']
@@ -476,13 +416,13 @@ class Unet(object):
         concat = False
         if 'Base' in self.layers_dict:
             concat = True
-            all_filters = self.layers_dict['Base']['Encoding']
+            all_filters = self.layers_dict['Base']
             x = self.run_filter_dict(x, all_filters, 'Base_', '')
         desc = 'Decoder'
         self.layer = 0
         layer_order.reverse()
         for layer in layer_order:
-            if 'Decoding' not in self.layers_dict[layer]:
+            if layer.find('Layer') == -1 or 'Decoding' not in self.layers_dict[layer]:
                 continue
             print(layer)
             layer_index -= 1
@@ -503,6 +443,8 @@ class Unet(object):
             all_filters = self.layers_dict[layer]['Decoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer += 1
+        if 'Final_Steps' in self.layers_dict:
+            x = self.run_filter_dict(x, self.layers_dict['Final_Steps'], 'Final_Steps', '')
         return x
 
 
@@ -525,8 +467,10 @@ class base_UNet(Unet):
 
 
 class my_3D_UNet(base_UNet):
-    def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
-                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_output=False, image_size=None,
+    def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='relu',
+                 pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
+                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True,
+                 input_size=1,save_memory=False, mask_output=False, image_size=None,
                  custom_loss=None, mask_loss=False, concat_not_add=True):
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
@@ -556,17 +500,7 @@ class my_3D_UNet(base_UNet):
                 image_input_primary = x = Input(shape=(self.z_images, self.image_size, self.image_size, self.input_size), name='UNet_Input')
         else:
             image_input_primary = x = self.complete_input
-        if self.is_2D:
-            output_kernel = (1,1)
-        else:
-            output_kernel = (1,1,1)
         x = self.run_unet(x)
-        self.save_memory = False
-        self.define_kernel(output_kernel)
-        if self.semantic_segmentation:
-            x = self.conv_block(channels=self.out_classes, x=x, name='output', activate=False)
-        if self.final_activation is not None:
-            x = Activation(self.final_activation)(x)
         if self.mask_loss or self.mask_output:
             self.mask = Input(shape=(None,None,None,self.out_classes),name='mask')
             self.sum_vals = Input(shape=(None, None, None, self.out_classes), name='sum_vals')
@@ -590,6 +524,67 @@ class my_3D_UNet(base_UNet):
             model = Model(inputs=inputs, outputs=x)
             self.created_model = model
         self.output = x
+
+
+class ClusteringLayer(Layer):
+    """
+    Clustering layer converts input sample (feature) to soft label, i.e. a vector that represents the probability of the
+    sample belonging to each cluster. The probability is calculated with student's t-distribution.
+
+    # Example
+    ```
+        model.add(ClusteringLayer(n_clusters=10))
+    ```
+    # Arguments
+        n_clusters: number of clusters.
+        weights: list of Numpy array with shape `(n_clusters, n_features)` witch represents the initial cluster centers.
+        alpha: parameter in Student's t-distribution. Default to 1.0.
+    # Input shape
+        2D tensor with shape: `(n_samples, n_features)`.
+    # Output shape
+        2D tensor with shape: `(n_samples, n_clusters)`.
+    """
+
+    def __init__(self, n_clusters, weights=None, alpha=1.0, **kwargs):
+        if 'input_shape' not in kwargs and 'input_dim' in kwargs:
+            kwargs['input_shape'] = (kwargs.pop('input_dim'),)
+        super(ClusteringLayer, self).__init__(**kwargs)
+        self.n_clusters = n_clusters
+        self.alpha = alpha
+        self.initial_weights = weights
+        self.input_spec = InputSpec(ndim=2)
+
+    def build(self, input_shape):
+        assert len(input_shape) == 2
+        input_dim = input_shape[1]
+        self.input_spec = InputSpec(dtype=K.floatx(), shape=(None, input_dim))
+        self.clusters = self.add_weight((self.n_clusters, input_dim), initializer='glorot_uniform', name='clusters')
+        if self.initial_weights is not None:
+            self.set_weights(self.initial_weights)
+            del self.initial_weights
+        self.built = True
+
+    def call(self, inputs, **kwargs):
+        """ student t-distribution, as same as used in t-SNE algorithm.
+                 q_ij = 1/(1+dist(x_i, u_j)^2), then normalize it.
+        Arguments:
+            inputs: the variable containing data, shape=(n_samples, n_features)
+        Return:
+            q: student's t-distribution, or soft labels for each sample. shape=(n_samples, n_clusters)
+        """
+        q = 1.0 / (1.0 + (K.sum(K.square(K.expand_dims(inputs, axis=1) - self.clusters), axis=2) / self.alpha))
+        q **= (self.alpha + 1.0) / 2.0
+        q = K.transpose(K.transpose(q) / K.sum(q, axis=1))
+        return q
+
+    def compute_output_shape(self, input_shape):
+        assert input_shape and len(input_shape) == 2
+        return input_shape[0], self.n_clusters
+
+    def get_config(self):
+        config = {'n_clusters': self.n_clusters}
+        base_config = super(ClusteringLayer, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 class identify_potential_slices(Unet):
