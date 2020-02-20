@@ -524,6 +524,74 @@ class base_UNet(Unet):
         pass
 
 
+class my_3D_UNet(base_UNet):
+    def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
+                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_output=False, image_size=None,
+                 custom_loss=None, mask_loss=False, concat_not_add=True):
+        self.mask_loss = mask_loss
+        self.custom_loss = custom_loss
+        self.semantic_segmentation = semantic_segmentation
+        self.complete_input = complete_input
+        self.image_size = image_size
+        self.z_images = z_images
+        self.previous_conv = None
+        self.final_activation = final_activation
+        if not layers_dict:
+            print('Need to pass in a dictionary')
+        self.is_2D = is_2D
+        self.input_size = input_size
+        self.create_model = create_model
+        super().__init__(kernel=kernel, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
+                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory,concat_not_add=concat_not_add)
+        self.striding_not_pooling = striding_not_pooling
+        self.out_classes = out_classes
+        self.mask_output = mask_output
+        self.get_unet(layers_dict)
+
+    def get_unet(self, layers_dict):
+        if self.complete_input is None:
+            if self.is_2D:
+                image_input_primary = x = Input(shape=(self.image_size, self.image_size, self.input_size), name='UNet_Input')
+            else:
+                image_input_primary = x = Input(shape=(self.z_images, self.image_size, self.image_size, self.input_size), name='UNet_Input')
+        else:
+            image_input_primary = x = self.complete_input
+        if self.is_2D:
+            output_kernel = (1,1)
+        else:
+            output_kernel = (1,1,1)
+        x = self.run_unet(x)
+        self.save_memory = False
+        self.define_kernel(output_kernel)
+        if self.semantic_segmentation:
+            x = self.conv_block(channels=self.out_classes, x=x, name='output', activate=False)
+        if self.final_activation is not None:
+            x = Activation(self.final_activation)(x)
+        if self.mask_loss or self.mask_output:
+            self.mask = Input(shape=(None,None,None,self.out_classes),name='mask')
+            self.sum_vals = Input(shape=(None, None, None, self.out_classes), name='sum_vals')
+            inputs = [image_input_primary,self.mask,self.sum_vals]
+            if self.mask_loss:
+                assert self.custom_loss is not None, 'Need to specify a custom loss when using masked input'
+                partial_func = partial(self.custom_loss, mask=self.mask)
+                self.custom_loss = update_wrapper(partial_func, self.custom_loss)
+            if self.mask_output:
+                # KeyError('Do not use mask_output, does not seem to work')
+                x = Multiply()([self.mask,x])
+                x = Add()([self.sum_vals,x])
+        else:
+            inputs = image_input_primary
+        if self.create_model:
+            model = Model(inputs=inputs, outputs=x)
+            self.created_model = model
+        else:
+            x = BilinearUpsampling(output_size=(512,512), name='BMA_Upsampling')(x)
+            x = Activation('softmax',name='Output_Activation')(x)
+            model = Model(inputs=inputs, outputs=x)
+            self.created_model = model
+        self.output = x
+
+
 class identify_potential_slices(Unet):
 
     def __init__(self, start_block=32, num_layers=2, filters=(3,3,3), reduce_size=0):
@@ -588,6 +656,7 @@ class identify_potential_slices(Unet):
         model = Model(inputs=image_input, outputs=x)
         self.created_model = model
 
+
 class identify_potential_slices_unet(Unet):
 
     def __init__(self, start_block=32, num_layers=2, filters=(3,3,3), reduce_size=0):
@@ -635,6 +704,7 @@ class identify_potential_slices_unet(Unet):
         x = Activation('softmax',name='Output_Activation')(x)
         model = Model(inputs=image_input, outputs=x)
         self.created_model = model
+
 
 class my_3D_UNet_total_skip_modular(object):
 
@@ -744,6 +814,7 @@ class my_3D_UNet_total_skip_modular(object):
         model = Model(inputs=image_inputs, outputs=x)
         self.created_model = model
 
+
 class my_3D_UNet_total_skip(object):
 
     def __init__(self, image_size=256, batch_size=32, start_block=64, channels=3, filter_vals=None,num_of_classes=2,num_layers=4):
@@ -831,6 +902,7 @@ class my_3D_UNet_total_skip(object):
 
         self.model = Model(inputs=[inputs], outputs=[x],name='3D_Pyramidal_UNet')
 
+
 class BilinearUpsampling(Layer):
     """Just a simple bilinear upsampling layer. Works only with TF.
        Args:
@@ -883,6 +955,7 @@ class BilinearUpsampling(Layer):
                   'data_format': self.data_format}
         base_config = super(BilinearUpsampling, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
 
 class BilinearUpsampling3D(Layer):
     """Just a simple bilinear upsampling layer. Works only with TF.
@@ -940,73 +1013,6 @@ class BilinearUpsampling3D(Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
-class my_3D_UNet(base_UNet):
-    def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='elu',pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
-                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True, input_size=1,save_memory=False, mask_output=False, image_size=None,
-                 custom_loss=None, mask_loss=False, concat_not_add=True):
-        self.mask_loss = mask_loss
-        self.custom_loss = custom_loss
-        self.semantic_segmentation = semantic_segmentation
-        self.complete_input = complete_input
-        self.image_size = image_size
-        self.z_images = z_images
-        self.previous_conv = None
-        self.final_activation = final_activation
-        if not layers_dict:
-            print('Need to pass in a dictionary')
-        self.is_2D = is_2D
-        self.input_size = input_size
-        self.create_model = create_model
-        super().__init__(kernel=kernel, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
-                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory,concat_not_add=concat_not_add)
-        self.striding_not_pooling = striding_not_pooling
-        self.out_classes = out_classes
-        self.mask_output = mask_output
-        self.get_unet(layers_dict)
-
-    def get_unet(self, layers_dict):
-        if self.complete_input is None:
-            if self.is_2D:
-                image_input_primary = x = Input(shape=(self.image_size, self.image_size, self.input_size), name='UNet_Input')
-            else:
-                image_input_primary = x = Input(shape=(self.z_images, self.image_size, self.image_size, self.input_size), name='UNet_Input')
-        else:
-            image_input_primary = x = self.complete_input
-        if self.is_2D:
-            output_kernel = (1,1)
-        else:
-            output_kernel = (1,1,1)
-        x = self.run_unet(x)
-        self.save_memory = False
-        self.define_kernel(output_kernel)
-        if self.semantic_segmentation:
-            x = self.conv_block(channels=self.out_classes, x=x, name='output', activate=False)
-        if self.final_activation is not None:
-            x = Activation(self.final_activation)(x)
-        if self.mask_loss or self.mask_output:
-            self.mask = Input(shape=(None,None,None,self.out_classes),name='mask')
-            self.sum_vals = Input(shape=(None, None, None, self.out_classes), name='sum_vals')
-            inputs = [image_input_primary,self.mask,self.sum_vals]
-            if self.mask_loss:
-                assert self.custom_loss is not None, 'Need to specify a custom loss when using masked input'
-                partial_func = partial(self.custom_loss, mask=self.mask)
-                self.custom_loss = update_wrapper(partial_func, self.custom_loss)
-            if self.mask_output:
-                # KeyError('Do not use mask_output, does not seem to work')
-                x = Multiply()([self.mask,x])
-                x = Add()([self.sum_vals,x])
-        else:
-            inputs = image_input_primary
-        if self.create_model:
-            model = Model(inputs=inputs, outputs=x)
-            self.created_model = model
-        else:
-            x = BilinearUpsampling(output_size=(512,512), name='BMA_Upsampling')(x)
-            x = Activation('softmax',name='Output_Activation')(x)
-            model = Model(inputs=inputs, outputs=x)
-            self.created_model = model
-        self.output = x
-
 class my_3D_UNet_dvf(base_UNet):
 
     def __init__(self, filter_vals=(3,3,3),layers_dict=None, pool_size=(2,2,2), activation='elu',pool_type='Max',
@@ -1033,6 +1039,7 @@ class my_3D_UNet_dvf(base_UNet):
         # y = nrn_layers.SpatialTransformer(interp_method='linear', indexing='ij')([image_input_primary, flow])
         model = Model(inputs=[image_input_primary,image_input_secondary], outputs=flow)
         self.created_model = model
+
 
 class my_3D_UNet_dvf_w_images(base_UNet):
 
