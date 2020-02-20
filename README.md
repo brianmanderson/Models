@@ -1,4 +1,5 @@
 ## Most commonly used for 'my_3D_UNet', note this works for 2D and 3D models
+## If you find this code useful, please provide a reference to my github page for others www.github.com/brianmanderson , thank you!
 ### Feed layer dictionaries to this model via something like below, this will make a simple 2D UNet with residual connections
     from Keras_3D_Models import my_3D_UNet
     
@@ -20,7 +21,7 @@
                               'Pooling':pooling_upsampling}
     base = [conv_block(64),conv_block(64)]
     layers_dict['Base'] = [residual_block(base)]
-    layers_dict['Final_Steps'] = [{'convolution': {'channels': num_classes, 'kernel': (3, 3), 'activation': 'softmax'}}]
+    layers_dict['Final_Steps'] = [{'convolution': {'channels': num_classes, 'kernel': (1, 1), 'activation': 'softmax'}}]
 
     model = my_3D_UNet(kernel=(3, 3), layers_dict=layers_dict, pool_size=(2, 2), custom_loss=None,
                        batch_norm=False, pool_type='Max')
