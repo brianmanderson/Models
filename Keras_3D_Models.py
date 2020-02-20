@@ -263,15 +263,16 @@ class Unet(object):
             self.layer += 1
         return x
 
-    def atrous_block(self, x, name, channels=None, kernel=None,atrous_rate=5, activations=None, add=True, **kwargs): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
+    def atrous_block(self, x, name, channels=None, kernel=None,atrous_rate=5, activations=None, residual=True, **kwargs): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
-        input_val = x
-        if x.shape[-1] != channels:
-            ones_kernel = tuple([1 for _ in range(len(kernel))])
-            input_val = self.conv_block(channels=channels, x=x, name='{}_Atrous_Reshape'.format(name), activate=False,
-                                        kernel=ones_kernel)
+        if residual:
+            input_val = x
+            if x.shape[-1] != channels:
+                ones_kernel = tuple([1 for _ in range(len(kernel))])
+                input_val = self.conv_block(channels=channels, x=x, name='{}_Atrous_Reshape'.format(name), activate=False,
+                                            kernel=ones_kernel)
         rates = [[kernel[i]**rate_block for i in range(len(kernel))] for rate_block in range(atrous_rate)]
         x = self.activation(name='{}_pre_activation'.format(name))(x)
         for i, rate in enumerate(rates):
@@ -289,12 +290,22 @@ class Unet(object):
                         x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
                 else:
                     x = self.activation(name=name+'_activation_{}'.format(i))(x)
-        x = Add(name=name + '_add')([x, input_val])
+        if residual:
+            x = Add(name=name + '_add')([x, input_val])
         return x
 
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
-        if 'transpose' in kwargs:
+        if 'residual' in kwargs:
+            input_val = x
+            for i, dictionary in enumerate(kwargs):
+                x = self.dict_block(x, name={'{}_residual_layer_{}'.format(name,i)}, **dictionary)
+            if x.shape[-1] != input_val.shape[-1]:
+                ones_kernel = tuple([1 for _ in range(len(self.kernel))])
+                input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name), activate=False,
+                                            kernel=ones_kernel)
+            x = Add(name=name + '_add')([x, input_val])
+        elif 'transpose' in kwargs:
             conv_func = self.tranpose_conv
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
         elif 'convolution' in kwargs:
