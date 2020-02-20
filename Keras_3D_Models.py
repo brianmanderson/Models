@@ -161,7 +161,6 @@ class Unet(object):
         self.padding = padding
 
     def residual_block(self, output_size,x,name,blocks=0, activation=None):
-        # This used to be input_val is the convolution
         if x.shape[-1] != output_size:
             x = self.conv_block(output_size,x=x,name=name + '_' + 'rescale_input',activate=False,filters=self.filters)
             if activation is not None:
@@ -268,11 +267,11 @@ class Unet(object):
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
-        get_new = True
         input_val = x
         if x.shape[-1] != channels:
+            ones_kernel = tuple([1 for _ in range(len(kernel))])
             input_val = self.conv_block(channels=channels, x=x, name='{}_Atrous_Reshape'.format(name), activate=False,
-                                        kernel=tuple([1 for _ in range(len(kernel))]))
+                                        kernel=ones_kernel)
         rates = [[kernel[i]**rate_block for i in range(len(kernel))] for rate_block in range(atrous_rate)]
         x = self.activation(name='{}_pre_activation'.format(name))(x)
         for i, rate in enumerate(rates):
@@ -281,8 +280,6 @@ class Unet(object):
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if self.batch_norm:
                 x = BatchNormalization()(x)
-            if i == len(rates)-1 and input_val is not None and add:
-                x = Add(name=name+'_add')([x,input_val])
             if i != len(rates): # Don't activate last one
                 if activations is not None:
                     if type(activations) is list:
@@ -292,6 +289,7 @@ class Unet(object):
                         x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
                 else:
                     x = self.activation(name=name+'_activation_{}'.format(i))(x)
+        x = Add(name=name + '_add')([x, input_val])
         return x
 
     def dict_block(self, x, name=None, **kwargs):
