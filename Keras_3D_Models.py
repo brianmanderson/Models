@@ -280,7 +280,7 @@ class Unet(object):
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if self.batch_norm:
                 x = BatchNormalization()(x)
-            if i != len(rates): # Don't activate last one
+            if i != len(rates) - 1: # Don't activate last one
                 if activations is not None:
                     if type(activations) is list:
                         if activations[i] is not 'linear':
