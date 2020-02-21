@@ -5,22 +5,43 @@
     
     num_classes = 2
     layers_dict = {}
-    conv_block = lambda x: {
-        'convolution': {'channels': x, 'kernel': (3, 3), 'activation': 'relu'}}
-    residual_block = lambda x: {'residual':x}
-    pooling_upsampling = {'Encoding':{'Pool_Size':(2,2),'Pooling_Type':'Max'},
-                          'Decoding':{'Pool_Size':(2,2)}}
-    encoding = [conv_block(32),conv_block(32)]
-    decoding = [conv_block(64), conv_block(64)]
-    layers_dict['Layer_0'] = {'Encoding':residual_block(encoding),'Decoding':residual_block(decoding),
-                              'Pooling':pooling_upsampling}
-    encoding = [conv_block(64),conv_block(64)]
-    decoding = [conv_block(64), conv_block(64)]
-    layers_dict['Layer_1'] = {'Encoding':residual_block(encoding),'Decoding':residual_block(decoding),
-                              'Pooling':pooling_upsampling}
-    base = [conv_block(64),conv_block(64)]
-    layers_dict['Base'] = [residual_block(base)]
-    layers_dict['Final_Steps'] = [{'convolution': {'channels': num_classes, 'kernel': (1, 1), 'activation': 'softmax'}}]
-
-    model = my_3D_UNet(kernel=(3, 3), layers_dict=layers_dict, pool_size=(2, 2), custom_loss=None,
-                       batch_norm=False, pool_type='Max')
+    conv_block = lambda x: {'convolution': {'channels': x, 'kernel': (3, 3),
+                                            'activation': None, 'strides': (1, 1)}}
+    act = lambda x: {'activation': x}
+    pooling_downsampling = {'pooling': {'pooling_type': 'Max',
+                                        'pool_size': (2, 2), 'direction': 'Down'}}
+    pooling_upsampling = {'pooling': {'pool_size': (2, 2), 'direction': 'Up'}}
+    residual_block = lambda x: {'residual': x}
+    
+    layers_dict['Layer_0'] = {'Encoding': {},
+                              'Decoding': {},
+                              'Pooling':
+                                  {'Encoding': {},
+                                   'Decoding': {}
+                                   }}
+    layers_dict['Layer_1'] = {'Encoding': {},
+                              'Decoding': {},
+                              'Pooling':
+                                  {'Encoding': {},
+                                   'Decoding': {}
+                                   }}
+    layers_dict['Base'] = {}
+    
+    enc = dec = lambda x: residual_block([act('relu'), conv_block(x), act('relu'), conv_block(x)])
+    layers_dict['Layer_0']['Encoding'] = enc(16)
+    layers_dict['Layer_0']['Pooling']['Encoding'] = pooling_downsampling
+    layers_dict['Layer_1']['Encoding'] = enc(32)
+    layers_dict['Layer_1']['Pooling']['Encoding'] = pooling_downsampling
+    
+    layers_dict['Base'] = enc(64)
+    
+    layers_dict['Layer_1']['Pooling']['Decoding'] = pooling_upsampling
+    layers_dict['Layer_1']['Decoding'] = dec(64)
+    layers_dict['Layer_0']['Pooling']['Decoding'] = pooling_upsampling
+    layers_dict['Layer_0']['Decoding'] = dec(32)
+    
+    layers_dict['Final_Steps'] = [act('relu'),
+                                  {'convolution': {'channels': num_classes, 'kernel': (1, 1), 'activation': 'softmax'}}
+                                  ]
+    
+    model = my_3D_UNet(kernel=(3, 3), layers_dict=layers_dict, pool_size=(2, 2))
