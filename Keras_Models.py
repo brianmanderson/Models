@@ -469,6 +469,7 @@ class Unet(object):
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer += 1
         if 'Final_Steps' in self.layers_dict:
+            print('Final_Steps')
             x = self.run_filter_dict(x, self.layers_dict['Final_Steps'], 'Final_Steps', '')
         return x
 
