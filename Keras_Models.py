@@ -491,7 +491,7 @@ class base_UNet(Unet):
         pass
 
 
-class BMA_UNet(base_UNet):
+class my_UNet(base_UNet):
     def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='relu',
                  pool_type='Max',z_images=None,complete_input=None,
                  batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,
