@@ -1739,4 +1739,4 @@ class TDLSTM_Conv(object):
 
 
 if __name__ == '__main__':
-    xxx = 1
+    pass
