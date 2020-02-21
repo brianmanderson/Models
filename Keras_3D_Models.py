@@ -176,7 +176,8 @@ class Unet(object):
             pool_size = self.pool_size
         if pooling_type is None:
             pooling_type = self.pooling_type
-        assert direction is not None, 'Need to provide "direction:(Up/Down"'
+        assert direction is 'Up' or direction is 'Down', 'Need to provide direction in pooling:{' \
+                                                         '"direction":("Up" or "Down")}, {} was given'.format(direction)
         if direction is 'Down':
             if len(pool_size) == 3:
                 if pooling_type == 'Max':
@@ -190,9 +191,9 @@ class Unet(object):
                     x = AveragePooling2D(pool_size=pool_size, name='{}_2DAvgPooling'.format(name))(x)
         else:
             if len(pool_size) == 3:
-                x = UpSampling3D(pool_size=pool_size, name='{}_3DUpSampling'.format(name))(x)
+                x = UpSampling3D(size=pool_size, name='{}_3DUpSampling'.format(name))(x)
             elif len(pool_size) == 2:
-                x = UpSampling2D(pool_size=pool_size, name='{}_2DUpSampling'.format(name))(x)
+                x = UpSampling2D(size=pool_size, name='{}_2DUpSampling'.format(name))(x)
         return x
 
     def shared_conv_block(self, x, y, output_size, name, strides=1):
@@ -275,10 +276,9 @@ class Unet(object):
                     x = self.activation(name=name+'_activation_{}'.format(i))(x)
         return x
 
-    def residual_block(self, x, name, **kwargs):
+    def residual_block(self, x, name, submodules):
         input_val = x
-        sub_modules = kwargs['residual']
-        x = self.run_filter_dict(x, sub_modules, name, 'Residual') # Loop through everything within
+        x = self.run_filter_dict(x, submodules, name, 'Residual') # Loop through everything within
         if x.shape[-1] != input_val.shape[-1]:
             ones_kernel = tuple([1 for _ in range(len(self.kernel))])
             input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name),
@@ -290,7 +290,7 @@ class Unet(object):
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
         if 'residual' in kwargs:
-            x = self.residual_block(x, name, **kwargs['residual'])
+            x = self.residual_block(x, name, submodules=kwargs['residual'])
         elif 'transpose' in kwargs:
             conv_func = self.tranpose_conv
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
@@ -398,16 +398,10 @@ class Unet(object):
             all_filters = self.layers_dict[layer]['Encoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer_vals[layer_index] = x
-            if 'Pooling' in self.layers_dict[layer] or ('Pooling' in self.layers_dict[layer] and self.layers_dict[layer]['Pooling'] is not None):
+            if 'Pooling' in self.layers_dict[layer]:
                 if 'Encoding' in self.layers_dict[layer]['Pooling']:
-                    # x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Encoding'], layer, 'strided_conv')
-                # else:
-                    if 'Pool_Size' in self.layers_dict[layer]['Pooling']:
-                        self.define_pool_size(self.layers_dict[layer]['Pooling']['Pool_Size'])
-                    if 'Pooling_Type' in self.layers_dict[layer]:
-                        self.define_pooling_type(self.layers_dict[layer]['Pooling_Type'])
-                    if len(self.layers_names) > 1:
-                        x = self.pooling_down_block(x, layer + '_Pooling')
+                    x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Encoding'],
+                                             '{}_Encoding_Pooling'.format(layer),'')
             layer_index += 1
         concat = False
         if 'Base' in self.layers_dict:
@@ -424,17 +418,9 @@ class Unet(object):
             layer_index -= 1
             if 'Pooling' in self.layers_dict[layer]:
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
-                    # x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'], layer, 'transpose_conv')
-                # else:
-                    if 'Pool_Size' in self.layers_dict[layer]['Pooling']:
-                        self.define_pool_size(self.layers_dict[layer]['Pooling']['Pool_Size'])
-                    x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
-                    if x.shape[-1] != self.layer_vals[layer_index].shape[-1] and not self.concat_not_add:
-                        x = self.conv_block(x,channels=self.layer_vals[layer_index].shape[-1],name='Conv_' + desc + str(layer))
-            if x.shape[-1] == self.layer_vals[layer_index].shape[-1] and not self.concat_not_add:
-                x = Add(name='Add_' + desc + str(layer))([x,self.layer_vals[layer_index]])
-                x = self.activation(name='Activate_' + desc + str(layer))(x)
-            elif concat:
+                    x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'],
+                                             '{}_Decoding_Pooling'.format(layer),'')
+            if concat:
                 x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
             all_filters = self.layers_dict[layer]['Decoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
