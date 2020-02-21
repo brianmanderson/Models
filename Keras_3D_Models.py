@@ -300,12 +300,14 @@ class Unet(object):
             x = self.atrous_block(x, name=name,**kwargs['atrous'])
         elif 'pooling' in kwargs:
             x = self.pooling_block(x, name=name, **kwargs['pooling'])
+        elif 'activation' in kwargs:
+            x = self.return_activation(kwargs['activation'])(name=name + '_activation_{}'.format(kwargs['activation']))(x)
         else:
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs)
         return x
 
     def conv_block(self,x,channels=None,kernel=None,name=None, strides=None, dialation_rate=1,conv_func=None,
-                   activation=None,activate=True, **kwargs):
+                   activation=None, **kwargs):
         if strides is None:
             strides = 1
         if conv_func is None:
@@ -318,11 +320,8 @@ class Unet(object):
 
         if self.batch_norm:
             x = BatchNormalization()(x)
-        if activate:
-            if activation is not None and activation is not 'linear':
-                x = self.return_activation(activation)(name=name + '_activation')(x)
-            elif activation is not 'linear':
-                x = self.activation(name=name + '_activation')(x)
+        if activation is not None:
+            x = self.return_activation(activation)(name=name + '_activation')(x)
         return x
     def dict_conv_block(self, x, desc, kernels=None,res_blocks=None,atrous_blocks=None,up_sample_blocks=None,
                         down_sample_blocks=None,activations=None,strides=None,channels=None,type='Conv',**kwargs):
