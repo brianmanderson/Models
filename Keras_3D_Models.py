@@ -302,7 +302,6 @@ class Unet(object):
         if kernel is None:
             kernel = self.kernel
         rates = [[kernel[i]**rate_block for i in range(len(kernel))] for rate_block in range(atrous_rate)]
-        x = self.activation(name='{}_pre_activation'.format(name))(x)
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
             x = self.conv_block(channels=channels,x=x,name=temp_name,dialation_rate=rate,activate=False, kernel=kernel)
