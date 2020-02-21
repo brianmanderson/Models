@@ -160,28 +160,6 @@ class Unet(object):
     def define_padding(self, padding='same'):
         self.padding = padding
 
-    def residual_block(self, output_size,x,name,blocks=0, activation=None):
-        if x.shape[-1] != output_size:
-            x = self.conv_block(output_size,x=x,name=name + '_' + 'rescale_input',activate=False,filters=self.filters)
-            if activation is not None:
-                x = input_val = self.return_activation(activation)(name=name + '_activation')(x)
-            else:
-                x = input_val = self.activation(name=name + '_activation')(x)
-        else:
-            input_val = x
-
-        for i in range(blocks):
-            x = self.conv_block(output_size,x,name=name+'_'+str(i))
-        x = self.conv(output_size, self.filters, activation=None, padding=self.padding,name=name)(x)
-        if self.batch_norm:
-            x = BatchNormalization()(x)
-        x = Add(name=name+'_add')([x,input_val])
-        if activation is not None:
-            x = self.return_activation(activation)(name=name + '_activation')(x)
-        else:
-            x = self.activation(name=name + '_activation')(x)
-        return x
-
     def strided_conv_block(self, output_size, x, name, strides=(2,2,2)):
         x = Conv3DTranspose(output_size, self.filters, strides=strides, padding=self.padding,
                             name=name)(x)
@@ -191,19 +169,30 @@ class Unet(object):
         return x
 
     def define_pooling_type(self,name='Max'):
-        self.pooling_name = name
+        self.pooling_type = name
 
-    def pooling_down_block(self, x, desc):
-        if not self.is_2D:
-            if self.pooling_name == 'Max':
-                x = MaxPooling3D(pool_size=self.pool_size, name=desc)(x)
-            elif self.pooling_name == 'Average':
-                x = AveragePooling3D(pool_size=self.pool_size, name=desc)(x)
+    def pooling_block(self, x, name, pooling_type='Max', pool_size=None, direction=None):
+        if pool_size is None:
+            pool_size = self.pool_size
+        if pooling_type is None:
+            pooling_type = self.pooling_type
+        assert direction is not None, 'Need to provide "direction:(Up/Down"'
+        if direction is 'Down':
+            if len(pool_size) == 3:
+                if pooling_type == 'Max':
+                    x = MaxPooling3D(pool_size=pool_size, name='{}_3DMaxPooling'.format(name))(x)
+                elif pooling_type == 'Average':
+                    x = AveragePooling3D(pool_size=pool_size, name='{}_3DAvgPooling'.format(name))(x)
+            else:
+                if pooling_type == 'Max':
+                    x = MaxPooling2D(pool_size=pool_size, name='{}_2DMaxPooling'.format(name))(x)
+                elif pooling_type == 'Average':
+                    x = AveragePooling2D(pool_size=pool_size, name='{}_2DAvgPooling'.format(name))(x)
         else:
-            if self.pooling_name == 'Max':
-                x = MaxPooling2D(pool_size=self.pool_size, name=desc)(x)
-            elif self.pooling_name == 'Average':
-                x = AveragePooling2D(pool_size=self.pool_size, name=desc)(x)
+            if len(pool_size) == 3:
+                x = UpSampling3D(pool_size=pool_size, name='{}_3DUpSampling'.format(name))(x)
+            elif len(pool_size) == 2:
+                x = UpSampling2D(pool_size=pool_size, name='{}_2DUpSampling'.format(name))(x)
         return x
 
     def shared_conv_block(self, x, y, output_size, name, strides=1):
@@ -286,17 +275,22 @@ class Unet(object):
                     x = self.activation(name=name+'_activation_{}'.format(i))(x)
         return x
 
+    def residual_block(self, x, name, **kwargs):
+        input_val = x
+        sub_modules = kwargs['residual']
+        x = self.run_filter_dict(x, sub_modules, name, 'Residual') # Loop through everything within
+        if x.shape[-1] != input_val.shape[-1]:
+            ones_kernel = tuple([1 for _ in range(len(self.kernel))])
+            input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name),
+                                        activate=False,
+                                        kernel=ones_kernel)
+        x = Add(name=name + '_add')([x, input_val])
+        return x
+
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
         if 'residual' in kwargs:
-            input_val = x
-            sub_modules = kwargs['residual']
-            x = self.run_filter_dict(x, sub_modules, name, 'Residual')
-            if x.shape[-1] != input_val.shape[-1]:
-                ones_kernel = tuple([1 for _ in range(len(self.kernel))])
-                input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name), activate=False,
-                                            kernel=ones_kernel)
-            x = Add(name=name + '_add')([x, input_val])
+            x = self.residual_block(x, name, **kwargs['residual'])
         elif 'transpose' in kwargs:
             conv_func = self.tranpose_conv
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
@@ -304,6 +298,8 @@ class Unet(object):
             x = self.conv_block(x,conv_func=conv_func,name=name,**kwargs['convolution'])
         elif 'atrous' in kwargs:
             x = self.atrous_block(x, name=name,**kwargs['atrous'])
+        elif 'pooling' in kwargs:
+            x = self.pooling_block(x, name=name, **kwargs['pooling'])
         else:
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs)
         return x
