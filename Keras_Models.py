@@ -420,9 +420,12 @@ class Unet(object):
         return x
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
-        if type(layer_dict) == list:
+        if type(layer_dict) is list:
             for i, dictionary in enumerate(layer_dict):
-                x = self.dict_block(x, name=layer + '_' + desc + '_' + str(i), **dictionary)
+                if type(dictionary) is dict:
+                    x = self.dict_block(x, name=layer + '_' + desc + '_' + str(i), **dictionary)
+                else:
+                    x = self.run_filter_dict(x, dictionary, layer=layer, desc=desc)
         else:
             x = self.dict_block(x, name=layer + '_' + desc + '_', **layer_dict)
         return x
