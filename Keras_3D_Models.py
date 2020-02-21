@@ -20,6 +20,50 @@ def wrapped_partial(func, *args, **kwargs):
     return partial_func
 
 
+def convolution_layer_dict():
+    '''
+    Things you can pass to the convolution layer dictionary
+    {'convolution':{'channels':a,'kernel':b,'activation':c,'padding':d,'strides':e'}}
+    :param channels: number of filters
+    :param kernel: kernel size
+    :param activation: what activation, defaults to None
+    :param padding: valid/same
+    :param strides: stride size
+    '''
+    return lambda a,b,c,d,e : {'convolution':{'channels':a,'kernel':b,'activation':c,'padding':d,'strides':e}}
+
+
+def pooling_layer_dict():
+    '''
+    Things you can pass to the pooling layer dictionary
+    {'pooling':{'pooling_type':'Max','pool_size':(2,2),'direction':'Down'}}
+    {'pooling':{'pool_size':(2,2),'direction':'Up'}}
+    :param pooling_type: for down sampling, can be 'Max' or 'Average
+    :param pool_size: side of kernel for pooling
+    :param direction: 'Up' for up sampling, 'Down' for downsampling
+    '''
+    return lambda a, b, c: {'pooling':{'pooling_type':'Max','pool_size':b,'direction':c}}
+
+
+def residual_layer():
+    '''
+    Things you can pass to residual layer
+    {'residual':[]}
+    pass a list of other layers and a residual connection will be performed between them
+    '''
+    return lambda a: {'residual':a}
+
+
+def activation_layer():
+    '''
+    Things you can pass to an activation layer
+    :param activations: list of ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax'], or
+    you can pass a dictionary for kwargs
+    {'activation':'relu'}
+    '''
+    return lambda x: {'activation':x}
+
+
 class Unet(object):
 
     def __init__(self,save_memory=False, concat_not_add=True):
@@ -449,18 +493,17 @@ class base_UNet(Unet):
 
 class my_3D_UNet(base_UNet):
     def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='relu',
-                 pool_type='Max',final_activation='softmax',z_images=None,complete_input=None,
-                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,semantic_segmentation=True,
+                 pool_type='Max',z_images=None,complete_input=None,
+                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,
                  input_size=1,save_memory=False, mask_output=False, image_size=None,
                  custom_loss=None, mask_loss=False, concat_not_add=True):
+
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
-        self.semantic_segmentation = semantic_segmentation
         self.complete_input = complete_input
         self.image_size = image_size
         self.z_images = z_images
         self.previous_conv = None
-        self.final_activation = final_activation
         if not layers_dict:
             print('Need to pass in a dictionary')
         self.is_2D = is_2D
