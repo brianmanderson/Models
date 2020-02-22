@@ -413,11 +413,11 @@ class BilinearUpsampling(Layer):
 
     def call(self, inputs):
         if self.upsampling:
-            return tf.compat.v1.image.resize_bilinear(inputs, (inputs.shape[1] * self.upsampling[0],
+            return tf.image.resize_bilinear(inputs, (inputs.shape[1] * self.upsampling[0],
                                                        inputs.shape[2] * self.upsampling[1]),
                                               align_corners=True)
         else:
-            return tf.compat.v1.image.resize_bilinear(inputs, (self.output_size[0],
+            return tf.image.resize_bilinear(inputs, (self.output_size[0],
                                                        self.output_size[1]),
                                               align_corners=True)
 
@@ -468,12 +468,12 @@ class BilinearUpsampling3D(Layer):
 
     def call(self, inputs):
         if self.upsampling:
-            return tf.compat.v1.image.resize_bilinear(inputs, (inputs.shape[1] * self.upsampling[0],
+            return tf.image.resize_bilinear(inputs, (inputs.shape[1] * self.upsampling[0],
                                                                inputs.shape[2] * self.upsampling[1],
                                                                inputs.shape[3] * self.upsampling[2]),
                                                       align_corners=True)
         else:
-            return tf.compat.v1.image.resize_bilinear(inputs, (self.output_size[0],self.output_size[1],
+            return tf.image.resize_bilinear(inputs, (self.output_size[0],self.output_size[1],
                                                                self.output_size[2]),
                                                       align_corners=True)
 
