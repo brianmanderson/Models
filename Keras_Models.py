@@ -1,6 +1,6 @@
 from tensorflow.python.keras.models import Model
 import tensorflow.python.keras.backend as K
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from tensorflow.python.keras.backend import variable
 from tensorflow.python.keras.layers import *
 from tensorflow.python.keras.initializers import RandomNormal
