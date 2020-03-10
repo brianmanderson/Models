@@ -71,6 +71,7 @@ class Unet(object):
         self.previous_conv = None
         self.concat_not_add = concat_not_add
         self.save_memory = save_memory
+        self.universe_index = 0
 
     def define_res_block(self,do_res_block=False):
         self.do_res_block = do_res_block
@@ -367,6 +368,7 @@ class Unet(object):
         if activation is not None:
             x = self.return_activation(activation)(name=name + '_activation')(x)
         return x
+
     def dict_conv_block(self, x, desc, kernels=None,res_blocks=None,atrous_blocks=None,up_sample_blocks=None,
                         down_sample_blocks=None,activations=None,strides=None,channels=None,type='Conv',**kwargs):
         conv_func = self.conv
@@ -421,13 +423,15 @@ class Unet(object):
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
         if type(layer_dict) is list:
-            for i, dictionary in enumerate(layer_dict):
+            for dictionary in layer_dict:
                 if type(dictionary) is dict:
-                    x = self.dict_block(x, name=layer + '_' + desc + '_' + str(i), **dictionary)
+                    x = self.dict_block(x, name='{}_{}_{}'.format(self.universe_index,layer,desc), **dictionary)
+                    self.universe_index += 1
                 else:
                     x = self.run_filter_dict(x, dictionary, layer=layer, desc=desc)
         else:
-            x = self.dict_block(x, name=layer + '_' + desc + '_', **layer_dict)
+            x = self.dict_block(x, name='{}_{}_{}'.format(self.universe_index,layer,desc), **layer_dict)
+            self.universe_index += 1
         return x
 
     def run_unet(self, x):
