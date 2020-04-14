@@ -1,17 +1,19 @@
-from tensorflow.keras.models import Model
-import tensorflow.keras.backend as K
-from tensorflow.keras.backend import variable
-from tensorflow.keras.layers import *
-from tensorflow.keras.initializers import RandomNormal
-from tensorflow.keras.models import load_model
-from functools import partial, update_wrapper
-import numpy as np
+__author__ = 'Brian M Anderson'
+# Created on 4/13/2020
 
+from tensorflow.keras.mixed_precision import experimental as mixed_precision
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_policy(policy)
+from tensorflow.keras.models import Model, load_model
+import tensorflow.keras.backend as K
+import tensorflow as tf
+from tensorflow.keras.layers import *
+from functools import partial, update_wrapper
 
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
 SqueezeDimension = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
-Subtract_new = lambda y: Lambda(lambda x: Subtract()([x,y]))
-Multipy_new = lambda y: Lambda(lambda x: Multiply()([x,y]))
+Subtract_new = lambda y: Lambda(lambda x: Subtract()([x, y]))
+Multipy_new = lambda y: Lambda(lambda x: Multiply()([x, y]))
 
 
 def wrapped_partial(func, *args, **kwargs):
@@ -30,7 +32,8 @@ def convolution_layer_dict():
     :param padding: valid/same
     :param strides: stride size
     '''
-    return lambda a,b,c,d,e : {'convolution':{'channels':a,'kernel':b,'activation':c,'padding':d,'strides':e}}
+    return lambda a, b, c, d, e: {
+        'convolution': {'channels': a, 'kernel': b, 'activation': c, 'padding': d, 'strides': e}}
 
 
 def pooling_layer_dict():
@@ -42,7 +45,7 @@ def pooling_layer_dict():
     :param pool_size: side of kernel for pooling
     :param direction: 'Up' for up sampling, 'Down' for downsampling
     '''
-    return lambda a, b, c: {'pooling':{'pooling_type':'Max','pool_size':b,'direction':c}}
+    return lambda a, b, c: {'pooling': {'pooling_type': 'Max', 'pool_size': b, 'direction': c}}
 
 
 def residual_layer():
@@ -51,7 +54,7 @@ def residual_layer():
     {'residual':[]}
     pass a list of other layers and a residual connection will be performed between them
     '''
-    return lambda a: {'residual':a}
+    return lambda a: {'residual': a}
 
 
 def activation_layer():
@@ -61,18 +64,18 @@ def activation_layer():
     you can pass a dictionary for kwargs
     {'activation':'relu'}
     '''
-    return lambda x: {'activation':x}
+    return lambda x: {'activation': x}
 
 
 class Unet(object):
 
-    def __init__(self,save_memory=False, concat_not_add=True):
+    def __init__(self, save_memory=False, concat_not_add=True):
         self.previous_conv = None
         self.concat_not_add = concat_not_add
         self.save_memory = save_memory
         self.universe_index = 0
 
-    def define_res_block(self,do_res_block=False):
+    def define_res_block(self, do_res_block=False):
         self.do_res_block = do_res_block
 
     def define_unet_dict(self, layers_dict):
@@ -101,11 +104,12 @@ class Unet(object):
             self.layer_names_fc.append('Final')
         return None
 
-    def FC_Block(self,output_size,x, sparse=False, dropout=0.0,name=''):
+    def FC_Block(self, output_size, x, sparse=False, dropout=0.0, name=''):
         for i in range(1):
             if sparse:
-                x = Dense(output_size, activation='linear', activity_regularizer=sparse_reg,name=name)(x)
-                x = Activation(self.activation)(x) # If using a regularization, you want to perform it before the activation, not after https://machinelearningmastery.com/how-to-reduce-generalization-error-in-deep-neural-networks-with-activity-regularization-in-keras/
+                x = Dense(output_size, activation='linear', activity_regularizer=sparse_reg, name=name)(x)
+                x = Activation(self.activation)(
+                    x)  # If using a regularization, you want to perform it before the activation, not after https://machinelearningmastery.com/how-to-reduce-generalization-error-in-deep-neural-networks-with-activity-regularization-in-keras/
             else:
                 x = Dense(output_size, activation=self.activation,
                           name=name)(x)
@@ -140,7 +144,7 @@ class Unet(object):
             all_connections_list = self.layers_dict_FC[layer]['Encoding']
             x = self.run_FC_block(x, all_connections_list, name=self.desc + '_' + layer)
         layer_order.reverse()
-        
+
         self.desc = 'Decoding_FC'
         for layer in layer_order:
             all_connections = self.layers_dict_FC[layer]['Decoding']
@@ -175,24 +179,24 @@ class Unet(object):
             self.define_2D_or_3D()
 
     def define_activation(self, activation):
-        normal_activations = ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh']
+        normal_activations = ['relu', 'elu', 'linear', 'exponential', 'hard_sigmoid', 'sigmoid', 'tanh']
         if type(activation) is str and activation.lower() in normal_activations:
-            self.activation = partial(Activation,activation)
+            self.activation = partial(Activation, activation)
         elif type(activation) is dict:
             if 'kwargs' in activation:
-                self.activation = partial(activation['activation'],**activation['kwargs'])
+                self.activation = partial(activation['activation'], **activation['kwargs'])
             else:
                 self.activation = partial(activation['activation'])
         else:
             self.activation = activation
 
     def return_activation(self, activation):
-        normal_activations = ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
+        normal_activations = ['relu', 'elu', 'linear', 'exponential', 'hard_sigmoid', 'sigmoid', 'tanh', 'softmax']
         if type(activation) is str and activation.lower() in normal_activations:
-            activation = partial(Activation,activation)
+            activation = partial(Activation, activation)
         elif type(activation) is dict:
             if 'kwargs' in activation:
-                activation = partial(activation['activation'],**activation['kwargs'])
+                activation = partial(activation['activation'], **activation['kwargs'])
             else:
                 activation = partial(activation['activation'])
         else:
@@ -205,15 +209,15 @@ class Unet(object):
     def define_padding(self, padding='same'):
         self.padding = padding
 
-    def strided_conv_block(self, output_size, x, name, strides=(2,2,2)):
+    def strided_conv_block(self, output_size, x, name, strides=(2, 2, 2)):
         x = Conv3DTranspose(output_size, self.filters, strides=strides, padding=self.padding,
                             name=name)(x)
         if self.batch_norm:
             x = BatchNormalization()(x)
-        x = Activation(self.activation, name=name+'_activation')(x)
+        x = Activation(self.activation, name=name + '_activation')(x)
         return x
 
-    def define_pooling_type(self,name='Max'):
+    def define_pooling_type(self, name='Max'):
         self.pooling_type = name
 
     def pooling_block(self, x, name, pooling_type='Max', pool_size=None, direction=None):
@@ -246,11 +250,11 @@ class Unet(object):
         x = layer(x)
         if self.batch_norm:
             x = BatchNormalization()(x)
-        x = Activation(self.activation, name=name+'_activation')(x)
+        x = Activation(self.activation, name=name + '_activation')(x)
         y = layer(y)
         if self.batch_norm:
             x = BatchNormalization()(x)
-        y = Activation(self.activation, name=name+'_activation')(y)
+        y = Activation(self.activation, name=name + '_activation')(y)
         return x, y
 
     def do_conv_block_enc(self, x):
@@ -279,7 +283,7 @@ class Unet(object):
             x = self.run_filter_dict(x, all_filters, 'Base_', '')
         return x, layer_vals
 
-    def do_conv_block_decode(self, x, layer_vals = None):
+    def do_conv_block_decode(self, x, layer_vals=None):
         desc = 'Decoder'
         self.layer = 0
         self.layer_order.reverse()
@@ -298,31 +302,33 @@ class Unet(object):
             self.layer += 1
         return x
 
-    def atrous_block(self, x, name, channels=None, kernel=None,atrous_rate=5, activations=None, **kwargs): # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
+    def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activations=None,
+                     **kwargs):  # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
-        rates = [[kernel[i]**rate_block for i in range(len(kernel))] for rate_block in range(atrous_rate)]
+        rates = [[kernel[i] ** rate_block for i in range(len(kernel))] for rate_block in range(atrous_rate)]
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
-            x = self.conv_block(channels=channels,x=x,name=temp_name,dialation_rate=rate,activate=False, kernel=kernel)
+            x = self.conv_block(channels=channels, x=x, name=temp_name, dialation_rate=rate, activate=False,
+                                kernel=kernel)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if self.batch_norm:
                 x = BatchNormalization()(x)
-            if i != len(rates) - 1: # Don't activate last one
+            if i != len(rates) - 1:  # Don't activate last one
                 if activations is not None:
                     if type(activations) is list:
                         if activations[i] is not 'linear':
-                            x = self.return_activation(activations[i])(name=name+'_activation_{}'.format(i))(x)
+                            x = self.return_activation(activations[i])(name=name + '_activation_{}'.format(i))(x)
                     elif activations is not 'linear':
                         x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
                 else:
-                    x = self.activation(name=name+'_activation_{}'.format(i))(x)
+                    x = self.activation(name=name + '_activation_{}'.format(i))(x)
         return x
 
     def residual_block(self, x, name, submodules):
         input_val = x
-        x = self.run_filter_dict(x, submodules, name, 'Residual') # Loop through everything within
+        x = self.run_filter_dict(x, submodules, name, 'Residual')  # Loop through everything within
         if x.shape[-1] != input_val.shape[-1]:
             ones_kernel = tuple([1 for _ in range(len(self.kernel))])
             input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name),
@@ -339,18 +345,19 @@ class Unet(object):
             conv_func = self.tranpose_conv
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
         elif 'convolution' in kwargs:
-            x = self.conv_block(x,conv_func=conv_func,name=name,**kwargs['convolution'])
+            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['convolution'])
         elif 'atrous' in kwargs:
-            x = self.atrous_block(x, name=name,**kwargs['atrous'])
+            x = self.atrous_block(x, name=name, **kwargs['atrous'])
         elif 'pooling' in kwargs:
             x = self.pooling_block(x, name=name, **kwargs['pooling'])
         elif 'activation' in kwargs:
-            x = self.return_activation(kwargs['activation'])(name=name + '_activation_{}'.format(kwargs['activation']))(x)
+            x = self.return_activation(kwargs['activation'])(name=name + '_activation_{}'.format(kwargs['activation']))(
+                x)
         else:
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs)
         return x
 
-    def conv_block(self,x,channels=None,kernel=None,name=None, strides=None, dialation_rate=1,conv_func=None,
+    def conv_block(self, x, channels=None, kernel=None, name=None, strides=None, dialation_rate=1, conv_func=None,
                    activation=None, **kwargs):
         if strides is None:
             strides = 1
@@ -359,7 +366,7 @@ class Unet(object):
         assert channels is not None, 'Need to provide "channels"'
         if kernel is None:
             kernel = self.kernel
-        x = conv_func(int(channels), kernel_size=kernel,activation=None, padding=self.padding,
+        x = conv_func(int(channels), kernel_size=kernel, activation=None, padding=self.padding,
                       name=name, strides=strides, dilation_rate=dialation_rate)(x)
 
         if self.batch_norm:
@@ -368,8 +375,8 @@ class Unet(object):
             x = self.return_activation(activation)(name=name + '_activation')(x)
         return x
 
-    def dict_conv_block(self, x, desc, kernels=None,res_blocks=None,atrous_blocks=None,up_sample_blocks=None,
-                        down_sample_blocks=None,activations=None,strides=None,channels=None,type='Conv',**kwargs):
+    def dict_conv_block(self, x, desc, kernels=None, res_blocks=None, atrous_blocks=None, up_sample_blocks=None,
+                        down_sample_blocks=None, activations=None, strides=None, channels=None, type='Conv', **kwargs):
         conv_func = self.conv
         if type == 'Transpose':
             conv_func = self.tranpose_conv
@@ -399,9 +406,10 @@ class Unet(object):
 
                 if res_blocks:
                     rate = res_blocks[i] if res_blocks else 0
-                    x = self.residual_block(channels[i], x=x, name=self.desc,blocks=rate)
+                    x = self.residual_block(channels[i], x=x, name=self.desc, blocks=rate)
                 elif atrous_blocks:
-                    x = self.atrous_block(channels[i],x=x,name=self.desc,rate_blocks=atrous_blocks[i],activations=activations)
+                    x = self.atrous_block(channels[i], x=x, name=self.desc, rate_blocks=atrous_blocks[i],
+                                          activations=activations)
                 elif up_sample_blocks is not None:
                     if stride is not None:
                         self.define_pool_size(stride)
@@ -410,7 +418,8 @@ class Unet(object):
                     activation = None
                     if activations is not None:
                         activation = activations[i]
-                    x = self.conv_block(channels[i], x=x, strides=stride, name=self.desc, conv_func=conv_func, activation=activation)
+                    x = self.conv_block(channels[i], x=x, strides=stride, name=self.desc, conv_func=conv_func,
+                                        activation=activation)
         elif type == 'Upsample':
             if strides is not None:
                 for i in range(len(strides)):
@@ -424,12 +433,12 @@ class Unet(object):
         if type(layer_dict) is list:
             for dictionary in layer_dict:
                 if type(dictionary) is dict:
-                    x = self.dict_block(x, name='{}_{}_{}'.format(self.universe_index,layer,desc), **dictionary)
+                    x = self.dict_block(x, name='{}_{}_{}'.format(self.universe_index, layer, desc), **dictionary)
                     self.universe_index += 1
                 else:
                     x = self.run_filter_dict(x, dictionary, layer=layer, desc=desc)
         else:
-            x = self.dict_block(x, name='{}_{}_{}'.format(self.universe_index,layer,desc), **layer_dict)
+            x = self.dict_block(x, name='{}_{}_{}'.format(self.universe_index, layer, desc), **layer_dict)
             self.universe_index += 1
         return x
 
@@ -450,7 +459,7 @@ class Unet(object):
             if 'Pooling' in self.layers_dict[layer]:
                 if 'Encoding' in self.layers_dict[layer]['Pooling']:
                     x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Encoding'],
-                                             '{}_Encoding_Pooling'.format(layer),'')
+                                             '{}_Encoding_Pooling'.format(layer), '')
             layer_index += 1
         concat = False
         if 'Base' in self.layers_dict:
@@ -468,7 +477,7 @@ class Unet(object):
             if 'Pooling' in self.layers_dict[layer]:
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
                     x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'],
-                                             '{}_Decoding_Pooling'.format(layer),'')
+                                             '{}_Decoding_Pooling'.format(layer), '')
             if concat:
                 x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
             all_filters = self.layers_dict[layer]['Decoding']
@@ -481,8 +490,8 @@ class Unet(object):
 
 
 class base_UNet(Unet):
-    def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),activation='elu', pool_type='Max',
-                 batch_norm=False,is_2D=False,save_memory=False,concat_not_add=True):
+    def __init__(self, kernel=(3, 3, 3), layers_dict=None, pool_size=(2, 2, 2), activation='elu', pool_type='Max',
+                 batch_norm=False, is_2D=False, save_memory=False, concat_not_add=True):
         super().__init__(save_memory=save_memory, concat_not_add=concat_not_add)
         self.layer_vals = {}
         self.define_2D_or_3D(is_2D)
@@ -494,15 +503,15 @@ class base_UNet(Unet):
         self.define_padding('same')
         self.define_pooling_type(pool_type)
 
-    def get_unet(self,layers_dict):
+    def get_unet(self, layers_dict):
         pass
 
 
 class my_UNet(base_UNet):
-    def __init__(self, kernel=(3,3,3),layers_dict=None, pool_size=(2,2,2),create_model=True, activation='relu',
-                 pool_type='Max',z_images=None,complete_input=None,
-                 batch_norm=False, striding_not_pooling=False, out_classes=2,is_2D=False,
-                 input_size=1,save_memory=False, mask_output=False, image_size=None,
+    def __init__(self, kernel=(3, 3, 3), layers_dict=None, pool_size=(2, 2, 2), create_model=True, activation='relu',
+                 pool_type='Max', z_images=None, complete_input=None,
+                 batch_norm=False, striding_not_pooling=False, out_classes=2, is_2D=False,
+                 input_size=1, save_memory=False, mask_output=False, image_size=None,
                  custom_loss=None, mask_loss=False, concat_not_add=True):
 
         self.mask_loss = mask_loss
@@ -517,7 +526,8 @@ class my_UNet(base_UNet):
         self.input_size = input_size
         self.create_model = create_model
         super().__init__(kernel=kernel, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
-                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D,save_memory=save_memory,concat_not_add=concat_not_add)
+                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D, save_memory=save_memory,
+                         concat_not_add=concat_not_add)
         self.striding_not_pooling = striding_not_pooling
         self.out_classes = out_classes
         self.mask_output = mask_output
@@ -526,26 +536,29 @@ class my_UNet(base_UNet):
     def get_unet(self, layers_dict):
         if self.complete_input is None:
             if self.is_2D:
-                image_input_primary = x = Input(shape=(self.image_size, self.image_size, self.input_size), name='UNet_Input')
+                image_input_primary = x = Input(shape=(self.image_size, self.image_size, self.input_size),
+                                                name='UNet_Input')
             else:
-                image_input_primary = x = Input(shape=(self.z_images, self.image_size, self.image_size, self.input_size), name='UNet_Input')
+                image_input_primary = x = Input(
+                    shape=(self.z_images, self.image_size, self.image_size, self.input_size), name='UNet_Input')
         else:
             image_input_primary = x = self.complete_input
         x = self.run_unet(x)
         if self.mask_loss or self.mask_output:
-            self.mask = Input(shape=(None,None,None,self.out_classes),name='mask')
+            self.mask = Input(shape=(None, None, None, self.out_classes), name='mask')
             self.sum_vals = Input(shape=(None, None, None, self.out_classes), name='sum_vals')
-            inputs = [image_input_primary,self.mask,self.sum_vals]
+            inputs = [image_input_primary, self.mask, self.sum_vals]
             if self.mask_loss:
                 assert self.custom_loss is not None, 'Need to specify a custom loss when using masked input'
                 partial_func = partial(self.custom_loss, mask=self.mask)
                 self.custom_loss = update_wrapper(partial_func, self.custom_loss)
             if self.mask_output:
                 # KeyError('Do not use mask_output, does not seem to work')
-                x = Multiply()([self.mask,x])
-                x = Add()([self.sum_vals,x])
+                x = Multiply()([self.mask, x])
+                x = Add()([self.sum_vals, x])
         else:
             inputs = image_input_primary
+        x = tf.keras.layers.Activation('linear', dtype='float32')(x)  # Always bring it back to float32
         if self.create_model:
             model = Model(inputs=inputs, outputs=x)
             self.created_model = model
