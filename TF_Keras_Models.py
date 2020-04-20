@@ -1,15 +1,12 @@
 __author__ = 'Brian M Anderson'
 # Created on 4/13/2020
 
-from tensorflow.keras.mixed_precision import experimental as mixed_precision
-policy = mixed_precision.Policy('mixed_float16')
-mixed_precision.set_policy(policy)
 from tensorflow.keras.models import Model, load_model
 import tensorflow.keras.backend as K
 import tensorflow as tf
 from tensorflow.keras.layers import *
 from functools import partial, update_wrapper
-
+# SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD)
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
 SqueezeDimension = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
 Subtract_new = lambda y: Lambda(lambda x: Subtract()([x, y]))
@@ -558,7 +555,6 @@ class my_UNet(base_UNet):
                 x = Add()([self.sum_vals, x])
         else:
             inputs = image_input_primary
-        x = tf.keras.layers.Activation('linear', dtype='float32')(x)  # Always bring it back to float32
         if self.create_model:
             model = Model(inputs=inputs, outputs=x)
             self.created_model = model
