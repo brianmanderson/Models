@@ -6,7 +6,7 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 from tensorflow.keras.layers import *
 from functools import partial, update_wrapper
-# SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD)
+# SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD())
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
 SqueezeDimension = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
 Subtract_new = lambda y: Lambda(lambda x: Subtract()([x, y]))
