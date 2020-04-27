@@ -90,7 +90,7 @@ class Return_Layer_Functions(object):
         self.pooling_type = pooling_type
 
     def convolution_or_transpose_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
-                          dialiation_rate=1, padding='same'):
+                          dialation_rate=1, padding='same'):
         '''
         :param type: 'convolution' or 'tranpose'
         :param channels: # of channels
@@ -98,7 +98,7 @@ class Return_Layer_Functions(object):
         :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
         :param batch_norm: perform batch_norm after convolution?
         :param strides: strides, (1,1), (2,2) for strided
-        :param dialiation_rate: rate for dialated convolution (atrous convolutions)
+        :param dialation_rate: rate for dialated convolution (atrous convolutions)
         :param padding: 'same' or 'valid'
         :return:
         '''
@@ -116,7 +116,7 @@ class Return_Layer_Functions(object):
         assert padding is not None, 'Need to provide padding, or set a default'
         assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
         block = {type: {'channels':channels, 'kernel':kernel, 'activation':activation,
-                        'batch_norm':batch_norm, 'strides':strides, 'dialiation_rate':dialiation_rate,
+                        'batch_norm':batch_norm, 'strides':strides, 'dialation_rate':dialation_rate,
                         'padding':padding}}
         return block
 
@@ -363,7 +363,10 @@ class Unet(object):
         input_val = x
         x = self.run_filter_dict(x, submodules, name, 'Residual')  # Loop through everything within
         if x.shape[-1] != input_val.shape[-1]:
-            ones_kernel = tuple([1 for _ in range(len(self.kernel))])
+            if self.is_2D:
+                ones_kernel = tuple([1 for _ in range(2)])
+            else:
+                ones_kernel = tuple([1 for _ in range(3)])
             input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name),
                                         activate=False,
                                         kernel=ones_kernel)
@@ -393,7 +396,7 @@ class Unet(object):
         return x
 
     def conv_block(self, x, channels=None, kernel=None, name=None, strides=None, dialation_rate=1, conv_func=None,
-                   activation=None, batch_norm=False, **kwargs):
+                   activation=None, batch_norm=False, padding=None, **kwargs):
         if strides is None:
             strides = 1
         if conv_func is None:
@@ -401,7 +404,7 @@ class Unet(object):
         assert channels is not None, 'Need to provide "channels"'
         if kernel is None:
             kernel = self.kernel
-        x = conv_func(int(channels), kernel_size=kernel, activation=None, padding=self.padding,
+        x = conv_func(int(channels), kernel_size=kernel, activation=None, padding=padding,
                       name=name, strides=strides, dilation_rate=dialation_rate)(x)
 
         if batch_norm:
