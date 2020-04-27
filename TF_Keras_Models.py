@@ -471,57 +471,39 @@ class Unet(object):
 
 
 class base_UNet(Unet):
-    def __init__(self, kernel=(3, 3, 3), layers_dict=None, pool_size=(2, 2, 2), activation='elu', pool_type='Max',
-                 batch_norm=False, is_2D=False, save_memory=False, concat_not_add=True):
+    def __init__(self, layers_dict=None, is_2D=False, save_memory=False, concat_not_add=True):
         super().__init__(save_memory=save_memory, concat_not_add=concat_not_add)
         self.layer_vals = {}
         self.define_2D_or_3D(is_2D)
         self.define_unet_dict(layers_dict)
-        self.define_pool_size(pool_size)
-        self.define_batch_norm(batch_norm)
-        self.define_kernel(kernel)
-        self.define_activation(activation)
-        self.define_padding('same')
-        self.define_pooling_type(pool_type)
 
     def get_unet(self, layers_dict):
         pass
 
 
 class my_UNet(base_UNet):
-    def __init__(self, kernel=(3, 3, 3), layers_dict=None, pool_size=(2, 2, 2), create_model=True, activation='relu',
-                 pool_type='Max', z_images=None, complete_input=None,
-                 batch_norm=False, striding_not_pooling=False, out_classes=2, is_2D=False,
-                 input_size=1, save_memory=False, mask_output=False, image_size=None,
+    def __init__(self, layers_dict=None, create_model=True, z_images=None, tensor_input=None,
+                 out_classes=2, is_2D=False, save_memory=False, mask_output=False, image_size=None,
                  custom_loss=None, mask_loss=False, concat_not_add=True):
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
-        self.complete_input = complete_input
+        self.tensor_input = tensor_input
         self.image_size = image_size
         self.z_images = z_images
         self.previous_conv = None
         assert layers_dict is not None, 'Need to pass a layers dictionary'
         self.is_2D = is_2D
-        self.input_size = input_size
         self.create_model = create_model
-        super().__init__(kernel=kernel, layers_dict=layers_dict, pool_size=pool_size, activation=activation,
-                         pool_type=pool_type, batch_norm=batch_norm, is_2D=is_2D, save_memory=save_memory,
-                         concat_not_add=concat_not_add)
-        self.striding_not_pooling = striding_not_pooling
+        super().__init__(layers_dict=layers_dict, is_2D=is_2D, save_memory=save_memory, concat_not_add=concat_not_add)
         self.out_classes = out_classes
         self.mask_output = mask_output
         self.get_unet(layers_dict)
 
     def get_unet(self, layers_dict):
-        if self.complete_input is None:
-            if self.is_2D:
-                image_input_primary = x = Input(shape=(self.image_size, self.image_size, self.input_size),
-                                                name='UNet_Input')
-            else:
-                image_input_primary = x = Input(
-                    shape=(self.z_images, self.image_size, self.image_size, self.input_size), name='UNet_Input')
+        if self.tensor_input is None:
+            image_input_primary = x = Input(self.image_size, name='UNet_Input')
         else:
-            image_input_primary = x = self.complete_input
+            image_input_primary = x = self.tensor_input
         x = self.run_unet(x)
         if self.mask_loss or self.mask_output:
             self.mask = Input(shape=(None, None, None, self.out_classes), name='mask')
@@ -532,7 +514,6 @@ class my_UNet(base_UNet):
                 partial_func = partial(self.custom_loss, mask=self.mask)
                 self.custom_loss = update_wrapper(partial_func, self.custom_loss)
             if self.mask_output:
-                # KeyError('Do not use mask_output, does not seem to work')
                 x = Multiply()([self.mask, x])
                 x = Add()([self.sum_vals, x])
         else:
