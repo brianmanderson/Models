@@ -13,55 +13,158 @@ Subtract_new = lambda y: Lambda(lambda x: Subtract()([x, y]))
 Multipy_new = lambda y: Lambda(lambda x: Multiply()([x, y]))
 
 
+def return_hollow_layers_dict(layers=3):
+    '''
+    :param layers: Number of layers
+    :return: A 'hollow' dictionary of what you should feed your network, populate each list
+    with dictionaries from Return_Layer_Functions
+    '''
+    layers_dict = {}
+    for layer in range(layers - 1):
+        layers_dict['Layer_' + str(layer)] = {'Encoding': [],
+                                              'Pooling':{'Encoding': [],
+                                                         'Decoding': []},
+                                              'Decoding': []}
+    layers_dict['Base'] = []
+    layers_dict['Final_Steps'] = []
+    return layers_dict
+
+class Return_Layer_Functions(object):
+    def __init__(self, kernel=None, strides=None, padding=None, batch_norm=None, pool_size=None,
+                 pooling_type=None):
+        '''
+        You can define any defaults here
+        :param kernel: (3,3)
+        :param strides: (1,1)
+        :param padding: 'same' or 'valid'
+        :param batch_norm: True or False
+        :param pool_size: (2,2)
+        '''
+        self.set_default_kernel(kernel)
+        self.set_default_padding(padding)
+        self.set_default_strides(strides)
+        self.set_default_batch_norm(batch_norm)
+        self.set_default_pool_size(pool_size)
+        self.set_default_pool_type(pooling_type)
+
+    def set_default_kernel(self, kernel):
+        '''
+        :param kernel: default kernel, (3,3)
+        :return:
+        '''
+        self.kernel = kernel
+
+    def set_default_strides(self, strides):
+        '''
+        :param strides: default strides, (1,1)
+        :return:
+        '''
+        self.strides = strides
+
+    def set_default_padding(self, padding):
+        '''
+        :param padding: 'same' or 'valid'
+        :return:
+        '''
+        self.padding = padding
+
+    def set_default_batch_norm(self, batch_norm):
+        '''
+        :param batch_norm: True or False
+        :return:
+        '''
+        self.batch_norm = batch_norm
+
+    def set_default_pool_size(self, pool_size):
+        '''
+        :param pool_size: (2,2))
+        :return:
+        '''
+        self.pool_size = pool_size
+
+    def set_default_pool_type(self, pooling_type):
+        '''
+        :param pooling_type: 'Max' or 'Average'
+        :return:
+        '''
+        self.pooling_type = pooling_type
+
+    def convolution_or_transpose_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
+                          dialiation_rate=1, padding='same'):
+        '''
+        :param type: 'convolution' or 'tranpose'
+        :param channels: # of channels
+        :param kernel: kernel size, ex (3,3)
+        :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
+        :param batch_norm: perform batch_norm after convolution?
+        :param strides: strides, (1,1), (2,2) for strided
+        :param dialiation_rate: rate for dialated convolution (atrous convolutions)
+        :param padding: 'same' or 'valid'
+        :return:
+        '''
+        if kernel is None:
+            kernel = self.kernel
+        if strides is None:
+            strides = self.strides
+        if padding is None:
+            padding = self.padding
+        if batch_norm is None:
+            batch_norm = self.batch_norm
+        assert channels is not None, 'Need to provide a number of channels'
+        assert kernel is not None, 'Need to provide a kernel, or set a default'
+        assert strides is not None, 'Need to provide strides, or set a default'
+        assert padding is not None, 'Need to provide padding, or set a default'
+        assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
+        block = {type: {'channels':channels, 'kernel':kernel, 'activation':activation,
+                        'batch_norm':batch_norm, 'strides':strides, 'dialiation_rate':dialiation_rate,
+                        'padding':padding}}
+        return block
+
+
+    def residual_layer(self, x):
+        '''
+        :param x: dictionary or list collection you want a residual connection across
+        :return:
+        '''
+        return {'residual':x}
+
+    def activation_layer(self, activation):
+        '''
+        :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
+        :return:
+        '''
+        return {'activation':activation}
+
+    def pooling_layer(self, pool_size=None, pooling_type=None):
+        '''
+        :param pooling_type: 'Max' or 'Average
+        :param pool_size: tuple of pool size
+        :return:
+        '''
+        if pool_size is None:
+            pool_size = self.pool_size
+        if pooling_type is None:
+            pooling_type = self.pooling_type
+        assert pooling_type is not None, "Need to pass a type to pooling layer ('Max', or 'Average')"
+        assert pool_size is not None, 'Need to pass a pool_size (2,2), etc.'
+        pooling = {'pooling': {'pool_size': pool_size, 'pooling_type': pooling_type}}
+        return pooling
+
+    def upsampling_layer(self, pool_size=None):
+        '''
+        :param pool_size: size of pooling (2,2), etc.
+        :return:
+        '''
+        if pool_size is None:
+            pool_size = self.pool_size
+        assert pool_size is not None, 'Need to provide a pool size for upsampling!'
+        return {'upsampling':{'pool_size':pool_size}}
+
+
 def wrapped_partial(func, *args, **kwargs):
     partial_func = partial(func, *args, **kwargs)
     update_wrapper(partial_func, func)
     return partial_func
-
-
-def convolution_layer_dict():
-    '''
-    Things you can pass to the convolution layer dictionary
-    {'convolution':{'channels':a,'kernel':b,'activation':c,'padding':d,'strides':e'}}
-    :param channels: number of filters
-    :param kernel: kernel size
-    :param activation: what activation, defaults to None
-    :param padding: valid/same
-    :param strides: stride size
-    '''
-    return lambda a, b, c, d, e: {
-        'convolution': {'channels': a, 'kernel': b, 'activation': c, 'padding': d, 'strides': e}}
-
-
-def pooling_layer_dict():
-    '''
-    Things you can pass to the pooling layer dictionary
-    {'pooling':{'pooling_type':'Max','pool_size':(2,2),'direction':'Down'}}
-    {'pooling':{'pool_size':(2,2),'direction':'Up'}}
-    :param pooling_type: for down sampling, can be 'Max' or 'Average
-    :param pool_size: side of kernel for pooling
-    :param direction: 'Up' for up sampling, 'Down' for downsampling
-    '''
-    return lambda a, b, c: {'pooling': {'pooling_type': 'Max', 'pool_size': b, 'direction': c}}
-
-
-def residual_layer():
-    '''
-    Things you can pass to residual layer
-    {'residual':[]}
-    pass a list of other layers and a residual connection will be performed between them
-    '''
-    return lambda a: {'residual': a}
-
-
-def activation_layer():
-    '''
-    Things you can pass to an activation layer
-    :param activations: list of ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax'], or
-    you can pass a dictionary for kwargs
-    {'activation':'relu'}
-    '''
-    return lambda x: {'activation': x}
 
 
 class Unet(object):
@@ -206,97 +309,30 @@ class Unet(object):
     def define_padding(self, padding='same'):
         self.padding = padding
 
-    def strided_conv_block(self, output_size, x, name, strides=(2, 2, 2)):
-        x = Conv3DTranspose(output_size, self.filters, strides=strides, padding=self.padding,
-                            name=name)(x)
-        if self.batch_norm:
-            x = BatchNormalization()(x)
-        x = Activation(self.activation, name=name + '_activation')(x)
-        return x
-
     def define_pooling_type(self, name='Max'):
         self.pooling_type = name
 
-    def pooling_block(self, x, name, pooling_type='Max', pool_size=None, direction=None):
-        if pool_size is None:
-            pool_size = self.pool_size
-        if pooling_type is None:
-            pooling_type = self.pooling_type
-        assert direction is 'Up' or direction is 'Down', 'Need to provide direction in pooling:{' \
-                                                         '"direction":("Up" or "Down")}, {} was given'.format(direction)
-        if direction is 'Down':
-            if len(pool_size) == 3:
-                if pooling_type == 'Max':
-                    x = MaxPooling3D(pool_size=pool_size, name='{}_3DMaxPooling'.format(name))(x)
-                elif pooling_type == 'Average':
-                    x = AveragePooling3D(pool_size=pool_size, name='{}_3DAvgPooling'.format(name))(x)
-            else:
-                if pooling_type == 'Max':
-                    x = MaxPooling2D(pool_size=pool_size, name='{}_2DMaxPooling'.format(name))(x)
-                elif pooling_type == 'Average':
-                    x = AveragePooling2D(pool_size=pool_size, name='{}_2DAvgPooling'.format(name))(x)
-        else:
-            if len(pool_size) == 3:
-                x = UpSampling3D(size=pool_size, name='{}_3DUpSampling'.format(name))(x)
-            elif len(pool_size) == 2:
-                x = UpSampling2D(size=pool_size, name='{}_2DUpSampling'.format(name))(x)
+    def upsampling_block(self, x, name, pool_size=None):
+        assert pool_size is not None and len(pool_size) < 4, 'Need to provide a pool_size tuple: ex. (2,2,2), (2,2)'
+        if len(pool_size) == 3:
+            x = UpSampling3D(size=pool_size, name='{}_3DUpSampling'.format(name))(x)
+        elif len(pool_size) == 2:
+            x = UpSampling2D(size=pool_size, name='{}_2DUpSampling'.format(name))(x)
         return x
 
-    def shared_conv_block(self, x, y, output_size, name, strides=1):
-        layer = Conv3D(output_size, self.filters, activation=None, padding=self.padding, name=name, strides=strides)
-        x = layer(x)
-        if self.batch_norm:
-            x = BatchNormalization()(x)
-        x = Activation(self.activation, name=name + '_activation')(x)
-        y = layer(y)
-        if self.batch_norm:
-            x = BatchNormalization()(x)
-        y = Activation(self.activation, name=name + '_activation')(y)
-        return x, y
-
-    def do_conv_block_enc(self, x):
-        self.layer = 0
-        layer_vals = {}
-        desc = 'Encoder'
-        self.layer_index = 0
-        self.layer_order = []
-        for layer in self.layers_names:
-            print(layer)
-            if layer == 'Base':
-                continue
-            self.layer_order.append(layer)
-            all_filters = self.layers_dict[layer]['Encoding']
-            x = self.run_filter_dict(x, all_filters, layer, desc)
-            layer_vals[self.layer_index] = x
-            if 'Pooling' in self.layers_dict[layer]:
-                self.define_pool_size(self.layers_dict[layer]['Pooling'])
-            if len(self.layers_names) > 1:
-                x = self.pooling_down_block(x, layer + '_Pooling')
-            self.layer_index += 1
-        self.concat = False
-        if 'Base' in self.layers_dict:
-            self.concat = True
-            all_filters = self.layers_dict['Base']['Encoding']
-            x = self.run_filter_dict(x, all_filters, 'Base_', '')
-        return x, layer_vals
-
-    def do_conv_block_decode(self, x, layer_vals=None):
-        desc = 'Decoder'
-        self.layer = 0
-        self.layer_order.reverse()
-        for layer in self.layer_order:
-            if 'Decoding' not in self.layers_dict[layer]:
-                continue
-            print(layer)
-            self.layer_index -= 1
-            if 'Pooling' in self.layers_dict[layer]:
-                self.define_pool_size(self.layers_dict[layer]['Pooling'])
-            if self.concat:
-                x = self.up_sample(size=self.pool_size, name='Upsampling' + str(self.layer) + '_UNet')(x)
-                x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, layer_vals[self.layer_index]])
-            all_filters = self.layers_dict[layer]['Decoding']
-            x = self.run_filter_dict(x, all_filters, layer, desc)
-            self.layer += 1
+    def pooling_block(self, x, name, pooling_type=None, pool_size=None):
+        assert pool_size is not None and len(pool_size) < 4, 'Need to provide a pool_size tuple: ex. (2,2,2), (2,2)'
+        assert pooling_type is not None, 'Need to provide a pool_type, "Max" or "Average"'
+        if len(pool_size) == 3:
+            if pooling_type == 'Max':
+                x = MaxPooling3D(pool_size=pool_size, name='{}_3DMaxPooling'.format(name))(x)
+            elif pooling_type == 'Average':
+                x = AveragePooling3D(pool_size=pool_size, name='{}_3DAvgPooling'.format(name))(x)
+        else:
+            if pooling_type == 'Max':
+                x = MaxPooling2D(pool_size=pool_size, name='{}_2DMaxPooling'.format(name))(x)
+            elif pooling_type == 'Average':
+                x = AveragePooling2D(pool_size=pool_size, name='{}_2DAvgPooling'.format(name))(x)
         return x
 
     def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activations=None,
@@ -347,6 +383,8 @@ class Unet(object):
             x = self.atrous_block(x, name=name, **kwargs['atrous'])
         elif 'pooling' in kwargs:
             x = self.pooling_block(x, name=name, **kwargs['pooling'])
+        elif 'upsampling' in kwargs:
+            x = self.upsampling_block(x, name=name, **kwargs['upsampling'])
         elif 'activation' in kwargs:
             x = self.return_activation(kwargs['activation'])(name=name + '_activation_{}'.format(kwargs['activation']))(
                 x)
@@ -355,7 +393,7 @@ class Unet(object):
         return x
 
     def conv_block(self, x, channels=None, kernel=None, name=None, strides=None, dialation_rate=1, conv_func=None,
-                   activation=None, **kwargs):
+                   activation=None, batch_norm=False, **kwargs):
         if strides is None:
             strides = 1
         if conv_func is None:
@@ -366,64 +404,10 @@ class Unet(object):
         x = conv_func(int(channels), kernel_size=kernel, activation=None, padding=self.padding,
                       name=name, strides=strides, dilation_rate=dialation_rate)(x)
 
-        if self.batch_norm:
+        if batch_norm:
             x = BatchNormalization()(x)
         if activation is not None:
             x = self.return_activation(activation)(name=name + '_activation')(x)
-        return x
-
-    def dict_conv_block(self, x, desc, kernels=None, res_blocks=None, atrous_blocks=None, up_sample_blocks=None,
-                        down_sample_blocks=None, activations=None, strides=None, channels=None, type='Conv', **kwargs):
-        conv_func = self.conv
-        if type == 'Transpose':
-            conv_func = self.tranpose_conv
-        elif type == 'Upsample':
-            up_sample_blocks = 1
-        rescale = False
-        if type != 'Upsample' and type != 'Downsample':
-            for i in range(len(channels)):
-                stride = None
-                if strides is not None:
-                    stride = strides[i]
-                # if activations:
-                #     self.define_activation(activations[i])
-                if kernels:
-                    self.define_filters(kernels[i])
-                    if len(kernels[i]) + 1 == len(x.shape):
-                        self.define_2D_or_3D(is_2D=False)
-                        x = ExpandDimension(0)(x)
-                        rescale = True
-                    elif len(kernels[i]) + 1 > len(x.shape):
-                        self.define_2D_or_3D(True)
-                        x = SqueezeDimension(0)(x)
-                if rescale:
-                    self.desc = desc + '3D_' + str(i)
-                else:
-                    self.desc = desc + str(i)
-
-                if res_blocks:
-                    rate = res_blocks[i] if res_blocks else 0
-                    x = self.residual_block(channels[i], x=x, name=self.desc, blocks=rate)
-                elif atrous_blocks:
-                    x = self.atrous_block(channels[i], x=x, name=self.desc, rate_blocks=atrous_blocks[i],
-                                          activations=activations)
-                elif up_sample_blocks is not None:
-                    if stride is not None:
-                        self.define_pool_size(stride)
-                    x = self.up_sample(self.pool_size)(x)
-                else:
-                    activation = None
-                    if activations is not None:
-                        activation = activations[i]
-                    x = self.conv_block(channels[i], x=x, strides=stride, name=self.desc, conv_func=conv_func,
-                                        activation=activation)
-        elif type == 'Upsample':
-            if strides is not None:
-                for i in range(len(strides)):
-                    self.define_pool_size(strides[i])
-                    x = self.up_sample(self.pool_size)(x)
-            else:
-                x = self.up_sample(self.pool_size)(x)
         return x
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
@@ -510,15 +494,13 @@ class my_UNet(base_UNet):
                  batch_norm=False, striding_not_pooling=False, out_classes=2, is_2D=False,
                  input_size=1, save_memory=False, mask_output=False, image_size=None,
                  custom_loss=None, mask_loss=False, concat_not_add=True):
-
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
         self.complete_input = complete_input
         self.image_size = image_size
         self.z_images = z_images
         self.previous_conv = None
-        if not layers_dict:
-            print('Need to pass in a dictionary')
+        assert layers_dict is not None, 'Need to pass a layers dictionary'
         self.is_2D = is_2D
         self.input_size = input_size
         self.create_model = create_model
