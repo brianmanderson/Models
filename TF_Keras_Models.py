@@ -89,8 +89,8 @@ class Return_Layer_Functions(object):
         '''
         self.pooling_type = pooling_type
 
-    def convolution_or_transpose_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
-                          dialation_rate=1, padding='same'):
+    def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
+                          dialation_rate=1, padding='same', **kwargs):
         '''
         :param type: 'convolution' or 'tranpose'
         :param channels: # of channels
@@ -120,8 +120,7 @@ class Return_Layer_Functions(object):
                         'padding':padding}}
         return block
 
-
-    def residual_layer(self, submodules, batch_norm=False, activation=None):
+    def residual_layer(self, submodules, batch_norm=False, activation=None, **kwargs):
         '''
         :param submodules: dictionary or list collection you want a residual connection across
         :param batch_norm: True/False for BN after convolution
