@@ -121,12 +121,14 @@ class Return_Layer_Functions(object):
         return block
 
 
-    def residual_layer(self, x):
+    def residual_layer(self, submodules, batch_norm=False, activation=None):
         '''
-        :param x: dictionary or list collection you want a residual connection across
+        :param submodules: dictionary or list collection you want a residual connection across
+        :param batch_norm: True/False for BN after convolution
+        :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
         :return:
         '''
-        return {'residual':x}
+        return {'residual':{'submodules':submodules,'batch_norm':batch_norm, 'activation':activation}}
 
     def activation_layer(self, activation):
         '''
@@ -359,7 +361,7 @@ class Unet(object):
                     x = self.activation(name=name + '_activation_{}'.format(i))(x)
         return x
 
-    def residual_block(self, x, name, submodules):
+    def residual_block(self, x, name, submodules, batch_norm=False, activation=None):
         input_val = x
         x = self.run_filter_dict(x, submodules, name, 'Residual')  # Loop through everything within
         if x.shape[-1] != input_val.shape[-1]:
@@ -368,15 +370,14 @@ class Unet(object):
             else:
                 ones_kernel = tuple([1 for _ in range(3)])
             input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name),
-                                        activate=False,
-                                        kernel=ones_kernel)
+                                        activation=activation, kernel=ones_kernel, padding='same', batch_norm=batch_norm)
         x = Add(name=name + '_add')([x, input_val])
         return x
 
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
         if 'residual' in kwargs:
-            x = self.residual_block(x, name, submodules=kwargs['residual'])
+            x = self.residual_block(x, name, **kwargs['residual'])
         elif 'transpose' in kwargs:
             conv_func = self.tranpose_conv
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
