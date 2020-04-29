@@ -39,6 +39,7 @@ class Return_Layer_Functions(object):
         :param padding: 'same' or 'valid'
         :param batch_norm: True or False
         :param pool_size: (2,2)
+        :param pool_type: 'Max' or 'Average'
         '''
         self.set_default_kernel(kernel)
         self.set_default_padding(padding)
