@@ -89,13 +89,13 @@ class Return_Layer_Functions(object):
         '''
         self.pooling_type = pooling_type
 
-    def atrous_layer(self, channels, kernel=None, atrous_rate=2, activations=None, batch_norm=None, padding=None,
+    def atrous_layer(self, channels, kernel=None, atrous_rate=2, activation=None, batch_norm=None, padding=None,
                      **kwargs):
         '''
         :param channels: # of channels
         :param kernel: kernel size, ex (3,3)
         :param atrous_rate: int for how many atrous convolutions to perform
-        :param activations: list of activations, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
+        :param activation: list of activations, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
         :param batch_norm: perform batch_norm after convolution?
         :param padding: 'same' or 'valid'
         :return:
@@ -106,14 +106,14 @@ class Return_Layer_Functions(object):
             padding = self.padding
         if batch_norm is None:
             batch_norm = self.batch_norm
-        if type(activations) is not list:
-            activations = [activations for _ in range(atrous_rate)]
+        if type(activation) is not list:
+            activation = [activation for _ in range(atrous_rate)]
         assert channels is not None, 'Need to provide a number of channels'
         assert kernel is not None, 'Need to provide a kernel, or set a default'
         assert padding is not None, 'Need to provide padding, or set a default'
         assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
         return {'atrous':{'channels':channels, 'kernel':kernel, 'batch_norm':batch_norm, 'padding':padding,
-                           'activation':activations, 'atrous_rate':atrous_rate}}
+                           'activation':activation, 'atrous_rate':atrous_rate}}
 
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
                           dialation_rate=1, padding='same', **kwargs):
@@ -362,7 +362,7 @@ class Unet(object):
                 x = AveragePooling2D(pool_size=pool_size, name='{}_2DAvgPooling'.format(name))(x)
         return x
 
-    def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activations=None,
+    def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activation=None,
                      **kwargs):  # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
@@ -376,12 +376,12 @@ class Unet(object):
             if self.batch_norm:
                 x = BatchNormalization()(x)
             if i != len(rates) - 1:  # Don't activate last one
-                if activations is not None:
-                    if type(activations) is list:
-                        if activations[i] is not 'linear':
-                            x = self.return_activation(activations[i])(name=name + '_activation_{}'.format(i))(x)
-                    elif activations is not 'linear':
-                        x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
+                if activation is not None:
+                    if type(activation) is list:
+                        if activation[i] is not 'linear':
+                            x = self.return_activation(activation[i])(name=name + '_activation_{}'.format(i))(x)
+                    elif activation is not 'linear':
+                        x = self.return_activation(activation)(name=name + '_activation_{}'.format(i))(x)
                 else:
                     x = self.activation(name=name + '_activation_{}'.format(i))(x)
         return x
