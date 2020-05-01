@@ -362,8 +362,8 @@ class Unet(object):
                 x = AveragePooling2D(pool_size=pool_size, name='{}_2DAvgPooling'.format(name))(x)
         return x
 
-    def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activation=None,
-                     **kwargs):  # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
+    def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activation=None, padding=None,
+                     batch_norm=False, **kwargs):  # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
@@ -371,19 +371,17 @@ class Unet(object):
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
             x = self.conv_block(channels=channels, x=x, name=temp_name, dialation_rate=rate, activate=False,
-                                kernel=kernel)
+                                kernel=kernel, padding=padding)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
-            if self.batch_norm:
+            if batch_norm:
                 x = BatchNormalization()(x)
-            if i != len(rates) - 1:  # Don't activate last one
-                if activation is not None:
-                    if type(activation) is list:
-                        if activation[i] is not 'linear':
-                            x = self.return_activation(activation[i])(name=name + '_activation_{}'.format(i))(x)
-                    elif activation is not 'linear':
-                        x = self.return_activation(activation)(name=name + '_activation_{}'.format(i))(x)
-                else:
-                    x = self.activation(name=name + '_activation_{}'.format(i))(x)
+            # if i != len(rates) - 1:  # Don't activate last one
+            if activation is not None:
+                if type(activation) is list:
+                    if activation[i] is not 'linear':
+                        x = self.return_activation(activation[i])(name=name + '_activation_{}'.format(i))(x)
+                elif activation is not 'linear':
+                    x = self.return_activation(activation)(name=name + '_activation_{}'.format(i))(x)
         return x
 
     def residual_block(self, x, name, submodules, batch_norm=False, activation=None):
