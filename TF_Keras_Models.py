@@ -3,7 +3,6 @@ __author__ = 'Brian M Anderson'
 
 from tensorflow.keras.models import Model, load_model
 import tensorflow.keras.backend as K
-import tensorflow as tf
 from tensorflow.keras.layers import *
 from functools import partial, update_wrapper
 # SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD())
@@ -89,6 +88,32 @@ class Return_Layer_Functions(object):
         :return:
         '''
         self.pooling_type = pooling_type
+
+    def atrous_layer(self, channels, kernel=None, atrous_rate=2, activations=None, batch_norm=None, padding=None,
+                     **kwargs):
+        '''
+        :param channels: # of channels
+        :param kernel: kernel size, ex (3,3)
+        :param atrous_rate: int for how many atrous convolutions to perform
+        :param activations: list of activations, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
+        :param batch_norm: perform batch_norm after convolution?
+        :param padding: 'same' or 'valid'
+        :return:
+        '''
+        if kernel is None:
+            kernel = self.kernel
+        if padding is None:
+            padding = self.padding
+        if batch_norm is None:
+            batch_norm = self.batch_norm
+        if type(activations) is not list:
+            activations = [activations for _ in range(atrous_rate)]
+        assert channels is not None, 'Need to provide a number of channels'
+        assert kernel is not None, 'Need to provide a kernel, or set a default'
+        assert padding is not None, 'Need to provide padding, or set a default'
+        assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
+        return {'atrous':{'channels':channels, 'kernel':kernel, 'batch_norm':batch_norm, 'padding':padding,
+                           'activation':activations, 'atrous_rate':atrous_rate}}
 
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
                           dialation_rate=1, padding='same', **kwargs):
