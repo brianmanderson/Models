@@ -390,7 +390,7 @@ class Unet(object):
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
             x = self.conv_block(channels=channels, x=x, name=temp_name, dialation_rate=rate, activate=False,
-                                kernel=kernel, padding=padding, bn_before_activation=bn_before_activation)
+                                kernel=kernel, padding=padding)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if batch_norm:
                 if bn_before_activation:
