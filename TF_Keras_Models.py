@@ -99,7 +99,7 @@ class Return_Layer_Functions(object):
         self.pooling_type = pooling_type
 
     def atrous_layer(self, channels, kernel=None, atrous_rate=2, activation=None, batch_norm=None, padding=None,
-                     **kwargs):
+                     bn_before_activation=None, **kwargs):
         '''
         :param channels: # of channels
         :param kernel: kernel size, ex (3,3)
@@ -107,6 +107,7 @@ class Return_Layer_Functions(object):
         :param activation: list of activations, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
         :param batch_norm: perform batch_norm after convolution?
         :param padding: 'same' or 'valid'
+        :param bn_before_activation: True/False, batch norm before activation
         :return:
         '''
         if kernel is None:
@@ -117,12 +118,14 @@ class Return_Layer_Functions(object):
             batch_norm = self.batch_norm
         if type(activation) is not list:
             activation = [activation for _ in range(atrous_rate)]
+        if bn_before_activation is None:
+            bn_before_activation = self.bn_before_activation
         assert channels is not None, 'Need to provide a number of channels'
         assert kernel is not None, 'Need to provide a kernel, or set a default'
         assert padding is not None, 'Need to provide padding, or set a default'
         assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
         return {'atrous':{'channels':channels, 'kernel':kernel, 'batch_norm':batch_norm, 'padding':padding,
-                           'activation':activation, 'atrous_rate':atrous_rate}}
+                           'activation':activation, 'atrous_rate':atrous_rate, 'bn_before_activation':bn_before_activation}}
 
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
                           dialation_rate=1, padding='same', bn_before_activation=None, **kwargs):
@@ -379,7 +382,7 @@ class Unet(object):
         return x
 
     def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activation=None, padding=None,
-                     batch_norm=False, **kwargs):  # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
+                     batch_norm=False, bn_before_activation=True, **kwargs):  # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
@@ -387,10 +390,11 @@ class Unet(object):
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
             x = self.conv_block(channels=channels, x=x, name=temp_name, dialation_rate=rate, activate=False,
-                                kernel=kernel, padding=padding)
+                                kernel=kernel, padding=padding, bn_before_activation=bn_before_activation)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if batch_norm:
-                x = BatchNormalization()(x)
+                if bn_before_activation:
+                    x = BatchNormalization()(x)
             # if i != len(rates) - 1:  # Don't activate last one
             if activation is not None:
                 if type(activation) is list:
@@ -398,6 +402,9 @@ class Unet(object):
                         x = self.return_activation(activation[i])(name=name + '_activation_{}'.format(i))(x)
                 elif activation is not 'linear':
                     x = self.return_activation(activation)(name=name + '_activation_{}'.format(i))(x)
+            if batch_norm:
+                if not bn_before_activation:
+                    x = BatchNormalization()(x)
         return x
 
     def residual_block(self, x, name, submodules, batch_norm=False, activation=None, bn_before_activation=True):
