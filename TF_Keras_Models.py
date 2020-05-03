@@ -390,7 +390,7 @@ class Unet(object):
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
             x = self.conv_block(channels=channels, x=x, name=temp_name, dialation_rate=rate, activate=False,
-                                kernel=kernel, padding=padding)
+                                kernel=kernel, padding=padding, batch_norm=False)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
             if batch_norm:
                 if bn_before_activation:
@@ -454,13 +454,13 @@ class Unet(object):
             kernel = self.kernel
         x = conv_func(int(channels), kernel_size=kernel, activation=None, padding=padding,
                       name=name, strides=strides, dilation_rate=dialation_rate)(x)
-        if bn_before_activation:
-            if batch_norm:
+        if batch_norm:
+            if bn_before_activation:
                 x = BatchNormalization()(x)
         if activation is not None:
             x = self.return_activation(activation)(name=name + '_activation')(x)
-        if not bn_before_activation:
-            if batch_norm:
+        if batch_norm:
+            if not bn_before_activation:
                 x = BatchNormalization()(x)
         return x
 
