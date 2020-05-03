@@ -29,9 +29,10 @@ def return_hollow_layers_dict(layers=3):
     layers_dict['Final_Steps'] = []
     return layers_dict
 
+
 class Return_Layer_Functions(object):
     def __init__(self, kernel=None, strides=None, padding=None, batch_norm=None, pool_size=None,
-                 pooling_type=None):
+                 pooling_type=None, bn_before_activation=True):
         '''
         You can define any defaults here
         :param kernel: (3,3)
@@ -39,7 +40,8 @@ class Return_Layer_Functions(object):
         :param padding: 'same' or 'valid'
         :param batch_norm: True or False
         :param pool_size: (2,2)
-        :param pool_type: 'Max' or 'Average'
+        :param pooling_type: 'Max' or 'Average'
+        :param bn_before_activation: True/False, perform batchnorm before activation or after
         '''
         self.set_default_kernel(kernel)
         self.set_default_padding(padding)
@@ -47,6 +49,13 @@ class Return_Layer_Functions(object):
         self.set_default_batch_norm(batch_norm)
         self.set_default_pool_size(pool_size)
         self.set_default_pool_type(pooling_type)
+        self.set_default_bn_before_activation(bn_before_activation)
+
+    def set_default_bn_before_activation(self, bn_before_activation):
+        '''
+        :param bn_before_activation: True/False, batch norm before activation?
+        '''
+        self.bn_before_activation = bn_before_activation
 
     def set_default_kernel(self, kernel):
         '''
@@ -91,7 +100,7 @@ class Return_Layer_Functions(object):
         self.pooling_type = pooling_type
 
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
-                          dialation_rate=1, padding='same', **kwargs):
+                          dialation_rate=1, padding='same', bn_before_activation=None, **kwargs):
         '''
         :param type: 'convolution' or 'tranpose'
         :param channels: # of channels
@@ -100,7 +109,8 @@ class Return_Layer_Functions(object):
         :param batch_norm: perform batch_norm after convolution?
         :param strides: strides, (1,1), (2,2) for strided
         :param dialation_rate: rate for dialated convolution (atrous convolutions)
-        :param padding: 'same' or 'valid'
+        :param padding: 'same' or 'valid'\
+        :param bn_before_activation: True/False, batch norm before activation
         :return:
         '''
         if kernel is None:
@@ -111,6 +121,8 @@ class Return_Layer_Functions(object):
             padding = self.padding
         if batch_norm is None:
             batch_norm = self.batch_norm
+        if bn_before_activation is None:
+            bn_before_activation = self.bn_before_activation
         assert channels is not None, 'Need to provide a number of channels'
         assert kernel is not None, 'Need to provide a kernel, or set a default'
         assert strides is not None, 'Need to provide strides, or set a default'
@@ -118,17 +130,21 @@ class Return_Layer_Functions(object):
         assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
         block = {type: {'channels':channels, 'kernel':kernel, 'activation':activation,
                         'batch_norm':batch_norm, 'strides':strides, 'dialation_rate':dialation_rate,
-                        'padding':padding}}
+                        'padding':padding, 'bn_before_activation':bn_before_activation}}
         return block
 
-    def residual_layer(self, submodules, batch_norm=False, activation=None, **kwargs):
+    def residual_layer(self, submodules, batch_norm=False, activation=None, bn_before_activation=None, **kwargs):
         '''
         :param submodules: dictionary or list collection you want a residual connection across
         :param batch_norm: True/False for BN after convolution
         :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
+        :param bn_before_activation: True/False, batch norm before activation
         :return:
         '''
-        return {'residual':{'submodules':submodules,'batch_norm':batch_norm, 'activation':activation}}
+        if bn_before_activation is None:
+            bn_before_activation = self.bn_before_activation
+        return {'residual':{'submodules':submodules,'batch_norm':batch_norm, 'activation':activation,
+                            'bn_before_activation':bn_before_activation}}
 
     def activation_layer(self, activation):
         '''
@@ -361,7 +377,7 @@ class Unet(object):
                     x = self.activation(name=name + '_activation_{}'.format(i))(x)
         return x
 
-    def residual_block(self, x, name, submodules, batch_norm=False, activation=None):
+    def residual_block(self, x, name, submodules, batch_norm=False, activation=None, bn_before_activation=True):
         input_val = x
         x = self.run_filter_dict(x, submodules, name, 'Residual')  # Loop through everything within
         if x.shape[-1] != input_val.shape[-1]:
@@ -370,7 +386,8 @@ class Unet(object):
             else:
                 ones_kernel = tuple([1 for _ in range(3)])
             input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name),
-                                        activation=activation, kernel=ones_kernel, padding='same', batch_norm=batch_norm)
+                                        activation=activation, kernel=ones_kernel, padding='same',
+                                        batch_norm=batch_norm, bn_before_activation=bn_before_activation)
         x = Add(name=name + '_add')([x, input_val])
         return x
 
@@ -397,7 +414,7 @@ class Unet(object):
         return x
 
     def conv_block(self, x, channels=None, kernel=None, name=None, strides=None, dialation_rate=1, conv_func=None,
-                   activation=None, batch_norm=False, padding=None, **kwargs):
+                   activation=None, batch_norm=False, padding=None, bn_before_activation=True, **kwargs):
         if strides is None:
             strides = 1
         if conv_func is None:
@@ -407,11 +424,14 @@ class Unet(object):
             kernel = self.kernel
         x = conv_func(int(channels), kernel_size=kernel, activation=None, padding=padding,
                       name=name, strides=strides, dilation_rate=dialation_rate)(x)
-
-        if batch_norm:
-            x = BatchNormalization()(x)
+        if bn_before_activation:
+            if batch_norm:
+                x = BatchNormalization()(x)
         if activation is not None:
             x = self.return_activation(activation)(name=name + '_activation')(x)
+        if not bn_before_activation:
+            if batch_norm:
+                x = BatchNormalization()(x)
         return x
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
