@@ -3,7 +3,6 @@ __author__ = 'Brian M Anderson'
 
 from tensorflow.keras.models import Model, load_model
 import tensorflow.keras.backend as K
-import tensorflow as tf
 from tensorflow.keras.layers import *
 from functools import partial, update_wrapper
 # SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD())
@@ -98,6 +97,32 @@ class Return_Layer_Functions(object):
         :return:
         '''
         self.pooling_type = pooling_type
+
+    def atrous_layer(self, channels, kernel=None, atrous_rate=2, activation=None, batch_norm=None, padding=None,
+                     **kwargs):
+        '''
+        :param channels: # of channels
+        :param kernel: kernel size, ex (3,3)
+        :param atrous_rate: int for how many atrous convolutions to perform
+        :param activation: list of activations, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
+        :param batch_norm: perform batch_norm after convolution?
+        :param padding: 'same' or 'valid'
+        :return:
+        '''
+        if kernel is None:
+            kernel = self.kernel
+        if padding is None:
+            padding = self.padding
+        if batch_norm is None:
+            batch_norm = self.batch_norm
+        if type(activation) is not list:
+            activation = [activation for _ in range(atrous_rate)]
+        assert channels is not None, 'Need to provide a number of channels'
+        assert kernel is not None, 'Need to provide a kernel, or set a default'
+        assert padding is not None, 'Need to provide padding, or set a default'
+        assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
+        return {'atrous':{'channels':channels, 'kernel':kernel, 'batch_norm':batch_norm, 'padding':padding,
+                           'activation':activation, 'atrous_rate':atrous_rate}}
 
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
                           dialation_rate=1, padding='same', bn_before_activation=None, **kwargs):
@@ -353,8 +378,8 @@ class Unet(object):
                 x = AveragePooling2D(pool_size=pool_size, name='{}_2DAvgPooling'.format(name))(x)
         return x
 
-    def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activations=None,
-                     **kwargs):  # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
+    def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activation=None, padding=None,
+                     batch_norm=False, **kwargs):  # https://arxiv.org/pdf/1901.09203.pdf, follow formula of k^(n-1)
         # where n is the convolution layer number, this is for k = 3, 5 gives a field of 243x243
         if kernel is None:
             kernel = self.kernel
@@ -362,19 +387,17 @@ class Unet(object):
         for i, rate in enumerate(rates):
             temp_name = name + 'Atrous_' + str(rate[-1])
             x = self.conv_block(channels=channels, x=x, name=temp_name, dialation_rate=rate, activate=False,
-                                kernel=kernel)
+                                kernel=kernel, padding=padding)
             # x = self.conv(output_size,self.filters, activation=None,padding=self.padding, name=temp_name, dilation_rate=rate)(x)
-            if self.batch_norm:
+            if batch_norm:
                 x = BatchNormalization()(x)
-            if i != len(rates) - 1:  # Don't activate last one
-                if activations is not None:
-                    if type(activations) is list:
-                        if activations[i] is not 'linear':
-                            x = self.return_activation(activations[i])(name=name + '_activation_{}'.format(i))(x)
-                    elif activations is not 'linear':
-                        x = self.return_activation(activations)(name=name + '_activation_{}'.format(i))(x)
-                else:
-                    x = self.activation(name=name + '_activation_{}'.format(i))(x)
+            # if i != len(rates) - 1:  # Don't activate last one
+            if activation is not None:
+                if type(activation) is list:
+                    if activation[i] is not 'linear':
+                        x = self.return_activation(activation[i])(name=name + '_activation_{}'.format(i))(x)
+                elif activation is not 'linear':
+                    x = self.return_activation(activation)(name=name + '_activation_{}'.format(i))(x)
         return x
 
     def residual_block(self, x, name, submodules, batch_norm=False, activation=None, bn_before_activation=True):
