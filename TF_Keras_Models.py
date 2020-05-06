@@ -5,6 +5,7 @@ from tensorflow.keras.models import Model, load_model
 import tensorflow.keras.backend as K
 from tensorflow.keras.layers import *
 from functools import partial, update_wrapper
+import tensorflow as tf
 # SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD())
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
 SqueezeDimension = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
@@ -439,6 +440,8 @@ class Unet(object):
         elif 'activation' in kwargs:
             x = self.return_activation(kwargs['activation'])(name=name + '_activation_{}'.format(kwargs['activation']))(
                 x)
+        elif 'custom' in kwargs:
+            x = kwargs['custom'](x)
         else:
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs)
         return x
@@ -560,16 +563,21 @@ class my_UNet(base_UNet):
             image_input_primary = x = self.tensor_input
         x = self.run_unet(x)
         if self.mask_loss or self.mask_output:
-            self.mask = Input(shape=(None, None, None, self.out_classes), name='mask')
-            self.sum_vals = Input(shape=(None, None, None, self.out_classes), name='sum_vals')
-            inputs = [image_input_primary, self.mask, self.sum_vals]
+            mask = Input(shape=(None, None, None, 1), name='mask', dtype='int32')
+            inputs = [image_input_primary, mask]
+            sum_vals_base = tf.where(mask > 0, 0, 1)
+            zeros = tf.where(mask > 0, 0, 0)
+            zeros = tf.repeat(zeros, repeats=self.out_classes-1, axis=-1)
+            mask = tf.repeat(mask, repeats=self.out_classes, axis=-1)
+            sum_vals = tf.concat([sum_vals_base, zeros], axis=-1)
             if self.mask_loss:
                 assert self.custom_loss is not None, 'Need to specify a custom loss when using masked input'
-                partial_func = partial(self.custom_loss, mask=self.mask)
+                partial_func = partial(self.custom_loss, mask=mask)
                 self.custom_loss = update_wrapper(partial_func, self.custom_loss)
             if self.mask_output:
-                x = Multiply()([self.mask, x])
-                x = Add()([self.sum_vals, x])
+                mask, sum_vals = tf.cast(mask, 'float32'), tf.cast(sum_vals, 'float32')
+                x = Multiply()([mask, x])
+                x = Add()([sum_vals, x])
         else:
             inputs = image_input_primary
         if self.create_model:
