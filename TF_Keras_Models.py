@@ -128,6 +128,16 @@ class Return_Layer_Functions(object):
         return {'atrous':{'channels':channels, 'kernel':kernel, 'batch_norm':batch_norm, 'padding':padding,
                            'activation':activation, 'atrous_rate':atrous_rate, 'bn_before_activation':bn_before_activation}}
 
+    def resize(self, channels, kernel=None, activation=None, batch_norm=None):
+        if kernel is None:
+            kernel = self.kernel
+        if batch_norm is None:
+            batch_norm = self.batch_norm
+        if activation is None:
+            activation = 'relu'
+        assert channels is not None, 'Need to provide a number of channels'
+        return {'resize':self.convolution_layer(channels=channels, kernel=kernel, batch_norm=batch_norm, activation=activation)}
+
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
                           dialation_rate=1, padding='same', bn_before_activation=None, **kwargs):
         '''
@@ -421,6 +431,8 @@ class Unet(object):
                                         batch_norm=batch_norm, bn_before_activation=bn_before_activation)
         x = Add(name=name + '_add')([x, input_val])
         return x
+    def resize_concat(self, x, name, conv_dict):
+        input_val = x
 
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
@@ -514,8 +526,18 @@ class Unet(object):
             layer_index -= 1
             if 'Pooling' in self.layers_dict[layer]:
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
-                    x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'],
-                                             '{}_Decoding_Pooling'.format(layer), '')
+                    if 'resize' in self.layers_dict[layer]['Pooling']['Decoding']:
+                        x_shape = tf.shape(x)
+                        if tf.size(x_shape) > tf.constant(4):
+                            x = tf.reshape(x, shape=[x_shape[0]*x_shape[1], x_shape[2], x_shape[3], x_shape[4]])
+                        x = tf.image.resize(x, size=tf.shape(self.layer_vals[layer_index])[-3:-1], method='nearest')
+                        if tf.size(x_shape) > tf.constant(4):
+                            x = tf.reshape(x, shape=x_shape)
+                        x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding']['resize'],
+                                                 '{}_Decoding_Pooling_resize'.format(layer), '')
+                    else:
+                        x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'],
+                                                 '{}_Decoding_Pooling'.format(layer), '')
             if concat:
                 x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
             all_filters = self.layers_dict[layer]['Decoding']
