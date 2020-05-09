@@ -129,6 +129,7 @@ class Return_Layer_Functions(object):
                            'activation':activation, 'atrous_rate':atrous_rate, 'bn_before_activation':bn_before_activation}}
 
     def resize(self, channels, kernel=None, activation=None, batch_norm=None):
+        print('Do not use this..in the works')
         if kernel is None:
             kernel = self.kernel
         if batch_norm is None:
@@ -207,7 +208,7 @@ class Return_Layer_Functions(object):
         pooling = {'pooling': {'pool_size': pool_size, 'pooling_type': pooling_type}}
         return pooling
 
-    def upsampling_layer(self, pool_size=None):
+    def upsampling_layer(self, pool_size=None, channels=None, kernel=None, activation=None, batch_norm=None):
         '''
         :param pool_size: size of pooling (2,2), etc.
         :return:
@@ -215,7 +216,17 @@ class Return_Layer_Functions(object):
         if pool_size is None:
             pool_size = self.pool_size
         assert pool_size is not None, 'Need to provide a pool size for upsampling!'
-        return {'upsampling':{'pool_size':pool_size}}
+        if kernel is None:
+            kernel = self.kernel
+        if batch_norm is None:
+            batch_norm = self.batch_norm
+        if activation is None:
+            activation = 'relu'
+        if channels is None:
+            return {'upsampling': {'pool_size': pool_size}}
+        else:
+            return [{'upsampling': {'pool_size': pool_size}},self.convolution_layer(channels=channels, kernel=kernel, batch_norm=batch_norm, activation=activation)]
+
 
 
 def wrapped_partial(func, *args, **kwargs):
@@ -526,20 +537,8 @@ class Unet(object):
             layer_index -= 1
             if 'Pooling' in self.layers_dict[layer]:
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
-                    if 'resize' in self.layers_dict[layer]['Pooling']['Decoding']:
-                        x_shape = x.shape
-                        if len(x_shape) > 4:
-                            batch_size, images, rows, cols, filters = x.shape
-                            x_shape_t = tf.shape(x)
-                            x = tf.reshape(x, shape=[x_shape_t[0]*x_shape_t[1], x_shape_t[2], x_shape_t[3], x_shape_t[4]])
-                        x = tf.image.resize(x, size=tf.shape(self.layer_vals[layer_index])[-3:-1], method='nearest')
-                        if len(x_shape) > 4:
-                            x = tf.reshape(x, shape=tf.convert_to_tensor([x_shape_t[0], x_shape_t[1], x_shape_t[2], x_shape_t[3], filters]))
-                        x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding']['resize'],
-                                                 '{}_Decoding_Pooling_resize'.format(layer), '')
-                    else:
-                        x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'],
-                                                 '{}_Decoding_Pooling'.format(layer), '')
+                    x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'],
+                                             '{}_Decoding_Pooling'.format(layer), '')
             if concat:
                 x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
             all_filters = self.layers_dict[layer]['Decoding']
