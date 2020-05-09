@@ -527,12 +527,14 @@ class Unet(object):
             if 'Pooling' in self.layers_dict[layer]:
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
                     if 'resize' in self.layers_dict[layer]['Pooling']['Decoding']:
-                        x_shape = tf.shape(x)
-                        if tf.size(x_shape) > tf.constant(4):
-                            x = tf.reshape(x, shape=[x_shape[0]*x_shape[1], x_shape[2], x_shape[3], x_shape[4]])
+                        x_shape = x.shape
+                        if len(x_shape) > 4:
+                            batch_size, images, rows, cols, filters = x.shape
+                            x_shape_t = tf.shape(x)
+                            x = tf.reshape(x, shape=[x_shape_t[0]*x_shape_t[1], x_shape_t[2], x_shape_t[3], x_shape_t[4]])
                         x = tf.image.resize(x, size=tf.shape(self.layer_vals[layer_index])[-3:-1], method='nearest')
-                        if tf.size(x_shape) > tf.constant(4):
-                            x = tf.reshape(x, shape=x_shape)
+                        if len(x_shape) > 4:
+                            x = tf.reshape(x, shape=tf.convert_to_tensor([x_shape_t[0], x_shape_t[1], x_shape_t[2], x_shape_t[3], filters]))
                         x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding']['resize'],
                                                  '{}_Decoding_Pooling_resize'.format(layer), '')
                     else:
