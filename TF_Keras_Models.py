@@ -362,6 +362,8 @@ class Unet(object):
         normal_activations = ['relu', 'elu', 'linear', 'exponential', 'hard_sigmoid', 'sigmoid', 'tanh', 'softmax']
         if type(activation) is str and activation.lower() in normal_activations:
             activation = partial(Activation, activation)
+        elif activation is None:
+            activation = partial(Activation, 'linear')
         elif type(activation) is dict:
             if 'kwargs' in activation:
                 activation = partial(activation['activation'], **activation['kwargs'])
@@ -420,7 +422,7 @@ class Unet(object):
             # if i != len(rates) - 1:  # Don't activate last one
             if activation is not None:
                 if type(activation) is list:
-                    if activation[i] is not 'linear':
+                    if activation[i] not in [None,'linear']:
                         x = self.return_activation(activation[i])(name=name + '_activation_{}'.format(i))(x)
                 elif activation is not 'linear':
                     x = self.return_activation(activation)(name=name + '_activation_{}'.format(i))(x)
@@ -429,7 +431,7 @@ class Unet(object):
                     x = BatchNormalization()(x)
         return x
 
-    def residual_block(self, x, name, submodules, batch_norm=False, activation=None, bn_before_activation=True):
+    def residual_block(self, x, name, submodules, batch_norm=True, activation=None, bn_before_activation=True):
         input_val = x
         x = self.run_filter_dict(x, submodules, name, 'Residual')  # Loop through everything within
         if x.shape[-1] != input_val.shape[-1]:
@@ -438,9 +440,10 @@ class Unet(object):
             else:
                 ones_kernel = tuple([1 for _ in range(3)])
             input_val = self.conv_block(channels=x.shape[-1], x=input_val, name='{}_Residual_Reshape'.format(name),
-                                        activation=activation, kernel=ones_kernel, padding='same',
+                                        activation=None, kernel=ones_kernel, padding='same',
                                         batch_norm=batch_norm, bn_before_activation=bn_before_activation)
         x = Add(name=name + '_add')([x, input_val])
+        x = self.return_activation(activation)(name=name + '_activation')(x)
         return x
     def resize_concat(self, x, name, conv_dict):
         input_val = x
