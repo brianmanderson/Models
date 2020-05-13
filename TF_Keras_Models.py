@@ -220,8 +220,6 @@ class Return_Layer_Functions(object):
             kernel = self.kernel
         if batch_norm is None:
             batch_norm = self.batch_norm
-        if activation is None:
-            activation = 'relu'
         if channels is None:
             return {'upsampling': {'pool_size': pool_size}}
         else:
@@ -542,8 +540,12 @@ class Unet(object):
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
                     x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'],
                                              '{}_Decoding_Pooling'.format(layer), '')
-            if concat:
+            if concat and self.concat_not_add:
                 x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
+            else:
+                assert x.shape[-1] == self.layer_vals[layer_index].shape[-1], 'Cannot add unless shapes are same'
+                x = Add()([x, self.layer_vals[layer_index]])
+                x = Activation('relu')(x)
             all_filters = self.layers_dict[layer]['Decoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer += 1
