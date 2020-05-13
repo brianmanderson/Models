@@ -208,7 +208,7 @@ class Return_Layer_Functions(object):
         pooling = {'pooling': {'pool_size': pool_size, 'pooling_type': pooling_type}}
         return pooling
 
-    def upsampling_layer(self, pool_size=None, channels=None, kernel=None, activation=None, batch_norm=None):
+    def upsampling_layer(self, pool_size=None):
         '''
         :param pool_size: size of pooling (2,2), etc.
         :return:
@@ -216,14 +216,7 @@ class Return_Layer_Functions(object):
         if pool_size is None:
             pool_size = self.pool_size
         assert pool_size is not None, 'Need to provide a pool size for upsampling!'
-        if kernel is None:
-            kernel = self.kernel
-        if batch_norm is None:
-            batch_norm = self.batch_norm
-        if channels is None:
-            return {'upsampling': {'pool_size': pool_size}}
-        else:
-            return [{'upsampling': {'pool_size': pool_size}},self.convolution_layer(channels=channels, kernel=kernel, batch_norm=batch_norm, activation=activation)]
+        return {'upsampling': {'pool_size': pool_size}}
 
 
 
@@ -443,8 +436,6 @@ class Unet(object):
         x = Add(name=name + '_add')([x, input_val])
         x = self.return_activation(activation)(name=name + '_activation')(x)
         return x
-    def resize_concat(self, x, name, conv_dict):
-        input_val = x
 
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
