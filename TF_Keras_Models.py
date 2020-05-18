@@ -139,6 +139,9 @@ class Return_Layer_Functions(object):
         assert channels is not None, 'Need to provide a number of channels'
         return {'resize':self.convolution_layer(channels=channels, kernel=kernel, batch_norm=batch_norm, activation=activation)}
 
+    def batch_norm_layer(self):
+        return {'batch_norm':1}
+
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
                           dialation_rate=1, padding='same', bn_before_activation=None, **kwargs):
         '''
@@ -441,6 +444,8 @@ class Unet(object):
         conv_func = self.conv
         if 'residual' in kwargs:
             x = self.residual_block(x, name, **kwargs['residual'])
+        elif 'batch_norm' in kwargs:
+            x = BatchNormalization()(x)
         elif 'transpose' in kwargs:
             conv_func = self.tranpose_conv
             x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
