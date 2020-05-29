@@ -382,9 +382,9 @@ class Unet(object):
     def upsampling_block(self, x, name, pool_size=None):
         assert pool_size is not None and len(pool_size) < 4, 'Need to provide a pool_size tuple: ex. (2,2,2), (2,2)'
         if len(pool_size) == 3:
-            x = UpSampling3D(size=pool_size, name='{}_3DUpSampling'.format(name))(x)
+            x = UpSampling3D(size=pool_size, name='3DUpSampling_{}'.format(name))(x)
         elif len(pool_size) == 2:
-            x = UpSampling2D(size=pool_size, name='{}_2DUpSampling'.format(name))(x)
+            x = UpSampling2D(size=pool_size, name='2DUpSampling_{}'.format(name))(x)
         return x
 
     def pooling_block(self, x, name, pooling_type=None, pool_size=None):
@@ -397,9 +397,9 @@ class Unet(object):
                 x = AveragePooling3D(pool_size=pool_size, name='{}_3DAvgPooling'.format(name))(x)
         else:
             if pooling_type == 'Max':
-                x = MaxPooling2D(pool_size=pool_size, name='{}_2DMaxPooling'.format(name))(x)
+                x = MaxPooling2D(pool_size=pool_size, name='2DMaxPooling_{}'.format(name))(x)
             elif pooling_type == 'Average':
-                x = AveragePooling2D(pool_size=pool_size, name='{}_2DAvgPooling'.format(name))(x)
+                x = AveragePooling2D(pool_size=pool_size, name='2DAvgPooling_{}'.format(name))(x)
         return x
 
     def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activation=None, padding=None,
@@ -487,12 +487,12 @@ class Unet(object):
         if kernel is None:
             kernel = self.kernel
         x = conv_func(int(channels), kernel_size=kernel, activation=None, padding=padding,
-                      name=name, strides=strides, dilation_rate=dialation_rate)(x)
+                      name='Conv_{}'.format(name), strides=strides, dilation_rate=dialation_rate)(x)
         if batch_norm:
             if bn_before_activation:
                 x = BatchNormalization()(x)
         if activation is not None:
-            x = self.return_activation(activation)(name=name + '_activation')(x)
+            x = self.return_activation(activation)(name='Activation_{}'.format(name))(x)
         if batch_norm:
             if not bn_before_activation:
                 x = BatchNormalization()(x)
