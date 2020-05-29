@@ -189,6 +189,9 @@ class Return_Layer_Functions(object):
         return {'residual':{'submodules':submodules,'batch_norm':batch_norm, 'activation':activation,
                             'bn_before_activation':bn_before_activation}}
 
+    def concat_layer(self, submodules):
+        return {'concat':{'submodules':submodules}}
+
     def activation_layer(self, activation):
         '''
         :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
@@ -425,6 +428,12 @@ class Unet(object):
                     x = BatchNormalization()(x)
         return x
 
+    def concat_block(self, x, name, submodules):
+        input_val = x
+        x = self.run_filter_dict(x, submodules, name, 'Concat')  # Loop through everything within
+        x = Concatenate(name='concat_{}'.format(name))([x, input_val])
+        return x
+
     def residual_block(self, x, name, submodules, batch_norm=True, activation=None, bn_before_activation=True):
         input_val = x
         x = self.run_filter_dict(x, submodules, name, 'Residual')  # Loop through everything within
@@ -444,6 +453,8 @@ class Unet(object):
         conv_func = self.conv
         if 'residual' in kwargs:
             x = self.residual_block(x, name, **kwargs['residual'])
+        elif 'concat' in kwargs:
+            x = self.concat_block(x, name, **kwargs['concat'])
         elif 'batch_norm' in kwargs:
             x = BatchNormalization()(x)
         elif 'transpose' in kwargs:
