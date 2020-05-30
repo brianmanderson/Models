@@ -142,8 +142,11 @@ class Return_Layer_Functions(object):
     def batch_norm_layer(self):
         return {'batch_norm':1}
 
+    def input_layer(self, input_shape, out_name=None):
+        return {'input':input_shape, 'out_name':out_name}
+
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
-                          dialation_rate=1, padding='same', bn_before_activation=None, **kwargs):
+                          dialation_rate=1, padding='same', bn_before_activation=None, inputs=None, out_name=None, **kwargs):
         '''
         :param type: 'convolution' or 'tranpose'
         :param channels: # of channels
@@ -173,7 +176,7 @@ class Return_Layer_Functions(object):
         assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
         block = {type: {'channels':channels, 'kernel':kernel, 'activation':activation,
                         'batch_norm':batch_norm, 'strides':strides, 'dialation_rate':dialation_rate,
-                        'padding':padding, 'bn_before_activation':bn_before_activation}}
+                        'padding':padding, 'bn_before_activation':bn_before_activation, 'out_name':out_name, 'inputs':inputs}}
         return block
 
     def residual_layer(self, submodules, batch_norm=False, activation=None, bn_before_activation=None, **kwargs):
@@ -189,8 +192,8 @@ class Return_Layer_Functions(object):
         return {'residual':{'submodules':submodules,'batch_norm':batch_norm, 'activation':activation,
                             'bn_before_activation':bn_before_activation}}
 
-    def concat_layer(self, submodules):
-        return {'concat':{'submodules':submodules}}
+    def concat_layer(self, inputs=None, out_name=None):
+        return {'concat':{'out_name':out_name, 'inputs':inputs}}
 
     def activation_layer(self, activation):
         '''
@@ -214,7 +217,7 @@ class Return_Layer_Functions(object):
         pooling = {'pooling': {'pool_size': pool_size, 'pooling_type': pooling_type}}
         return pooling
 
-    def upsampling_layer(self, pool_size=None):
+    def upsampling_layer(self, pool_size=None, out_name=None):
         '''
         :param pool_size: size of pooling (2,2), etc.
         :return:
@@ -222,7 +225,7 @@ class Return_Layer_Functions(object):
         if pool_size is None:
             pool_size = self.pool_size
         assert pool_size is not None, 'Need to provide a pool size for upsampling!'
-        return {'upsampling': {'pool_size': pool_size}}
+        return {'upsampling': {'pool_size': pool_size, 'out_name':out_name}}
 
 
 
@@ -379,15 +382,17 @@ class Unet(object):
     def define_pooling_type(self, name='Max'):
         self.pooling_type = name
 
-    def upsampling_block(self, x, name, pool_size=None):
+    def upsampling_block(self, x, name, pool_size=None, out_name=None):
         assert pool_size is not None and len(pool_size) < 4, 'Need to provide a pool_size tuple: ex. (2,2,2), (2,2)'
         if len(pool_size) == 3:
             x = UpSampling3D(size=pool_size, name='3DUpSampling_{}'.format(name))(x)
         elif len(pool_size) == 2:
             x = UpSampling2D(size=pool_size, name='2DUpSampling_{}'.format(name))(x)
+        if out_name is not None:
+            self.layer_vals[out_name] = x
         return x
 
-    def pooling_block(self, x, name, pooling_type=None, pool_size=None):
+    def pooling_block(self, x, name, pooling_type=None, pool_size=None, out_name=None):
         assert pool_size is not None and len(pool_size) < 4, 'Need to provide a pool_size tuple: ex. (2,2,2), (2,2)'
         assert pooling_type is not None, 'Need to provide a pool_type, "Max" or "Average"'
         if len(pool_size) == 3:
@@ -400,6 +405,8 @@ class Unet(object):
                 x = MaxPooling2D(pool_size=pool_size, name='2DMaxPooling_{}'.format(name))(x)
             elif pooling_type == 'Average':
                 x = AveragePooling2D(pool_size=pool_size, name='2DAvgPooling_{}'.format(name))(x)
+        if out_name is not None:
+            self.layer_vals[out_name] = x
         return x
 
     def atrous_block(self, x, name, channels=None, kernel=None, atrous_rate=5, activation=None, padding=None,
@@ -428,10 +435,13 @@ class Unet(object):
                     x = BatchNormalization()(x)
         return x
 
-    def concat_block(self, x, name, submodules):
-        input_val = x
-        x = self.run_filter_dict(x, submodules, name, 'Concat')  # Loop through everything within
-        x = Concatenate(name='concat_{}'.format(name))([x, input_val])
+    def concat_block(self, name, inputs=None, out_name=None):
+        if out_name is None:
+            out_name = 'concat_{}'.format(name)
+        tensor_list = []
+        for tensor_name in inputs:
+            tensor_list.append(self.layer_vals[tensor_name])
+        x = Concatenate(name=out_name)(tensor_list)
         return x
 
     def residual_block(self, x, name, submodules, batch_norm=True, activation=None, bn_before_activation=True):
@@ -454,7 +464,7 @@ class Unet(object):
         if 'residual' in kwargs:
             x = self.residual_block(x, name, **kwargs['residual'])
         elif 'concat' in kwargs:
-            x = self.concat_block(x, name, **kwargs['concat'])
+            x = self.concat_block(name, **kwargs['concat'])
         elif 'batch_norm' in kwargs:
             x = BatchNormalization()(x)
         elif 'transpose' in kwargs:
@@ -478,7 +488,10 @@ class Unet(object):
         return x
 
     def conv_block(self, x, channels=None, kernel=None, name=None, strides=None, dialation_rate=1, conv_func=None,
-                   activation=None, batch_norm=False, padding=None, bn_before_activation=True, **kwargs):
+                   activation=None, batch_norm=False, padding=None, bn_before_activation=True, out_name=None,
+                   inputs=None, **kwargs):
+        if inputs is not None:
+            x = self.layers_dict[inputs]
         if strides is None:
             strides = 1
         if conv_func is None:
@@ -496,6 +509,8 @@ class Unet(object):
         if batch_norm:
             if not bn_before_activation:
                 x = BatchNormalization()(x)
+        if out_name is not None:
+            self.layer_vals[out_name] = x
         return x
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
@@ -576,7 +591,8 @@ class base_UNet(Unet):
 class my_UNet(base_UNet):
     def __init__(self, layers_dict=None, create_model=True, z_images=None, tensor_input=None,
                  out_classes=2, is_2D=False, save_memory=False, mask_output=False, image_size=None,
-                 custom_loss=None, mask_loss=False, concat_not_add=True):
+                 custom_loss=None, mask_loss=False, concat_not_add=True, explicit=False):
+        self.explicit = explicit
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
         self.tensor_input = tensor_input
