@@ -479,8 +479,7 @@ class Unet(object):
         elif 'upsampling' in kwargs:
             x = self.upsampling_block(x, name=name, **kwargs['upsampling'])
         elif 'activation' in kwargs:
-            x = self.return_activation(kwargs['activation'])(name=name + '_activation_{}'.format(kwargs['activation']))(
-                x)
+            x = self.return_activation(kwargs['activation'])(name='Activation_{}_{}'.format(kwargs['activation'],name))(x)
         elif 'custom' in kwargs:
             x = kwargs['custom'](x)
         else:
