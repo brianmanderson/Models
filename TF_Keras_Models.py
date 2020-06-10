@@ -616,7 +616,7 @@ class my_UNet(base_UNet):
             mask = Input(shape=(None, None, None, 1), name='mask', dtype='int32')
             inputs = [image_input_primary, mask]
             sum_vals_base = tf.where(mask > 0, 0, 1)
-            zeros = tf.zeros(mask.shape)
+            zeros = tf.where(mask > 0, 0, 0)
             zeros = tf.repeat(zeros, repeats=self.out_classes-1, axis=-1)
             mask = tf.repeat(mask, repeats=self.out_classes, axis=-1)
             sum_vals = tf.concat([sum_vals_base, zeros], axis=-1)
