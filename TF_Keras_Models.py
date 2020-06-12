@@ -237,11 +237,12 @@ def wrapped_partial(func, *args, **kwargs):
 
 class Unet(object):
 
-    def __init__(self, save_memory=False, concat_not_add=True):
+    def __init__(self, save_memory=False, concat_not_add=True, explictly_defined=False):
         self.previous_conv = None
         self.concat_not_add = concat_not_add
         self.save_memory = save_memory
         self.universe_index = 0
+        self.explictly_defined = explictly_defined
 
     def define_res_block(self, do_res_block=False):
         self.do_res_block = do_res_block
@@ -561,12 +562,13 @@ class Unet(object):
                 if 'Decoding' in self.layers_dict[layer]['Pooling']:
                     x = self.run_filter_dict(x, self.layers_dict[layer]['Pooling']['Decoding'],
                                              '{}_Decoding_Pooling'.format(layer), '')
-            if concat and self.concat_not_add:
-                x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
-            else:
-                assert x.shape[-1] == self.layer_vals[layer_index].shape[-1], 'Cannot add unless shapes are same'
-                x = Add()([x, self.layer_vals[layer_index]])
-                x = Activation('relu')(x)
+            if not self.explictly_defined:
+                if concat and self.concat_not_add:
+                    x = Concatenate(name='concat' + str(self.layer) + '_Unet')([x, self.layer_vals[layer_index]])
+                else:
+                    assert x.shape[-1] == self.layer_vals[layer_index].shape[-1], 'Cannot add unless shapes are same'
+                    x = Add()([x, self.layer_vals[layer_index]])
+                    x = Activation('relu')(x)
             all_filters = self.layers_dict[layer]['Decoding']
             x = self.run_filter_dict(x, all_filters, layer, desc)
             self.layer += 1
@@ -577,8 +579,8 @@ class Unet(object):
 
 
 class base_UNet(Unet):
-    def __init__(self, layers_dict=None, is_2D=False, save_memory=False, concat_not_add=True):
-        super().__init__(save_memory=save_memory, concat_not_add=concat_not_add)
+    def __init__(self, layers_dict=None, is_2D=False, save_memory=False, concat_not_add=True, explictly_defined=False):
+        super().__init__(save_memory=save_memory, concat_not_add=concat_not_add, explictly_defined=explictly_defined)
         self.layer_vals = {}
         self.define_2D_or_3D(is_2D)
         self.define_unet_dict(layers_dict)
@@ -590,8 +592,7 @@ class base_UNet(Unet):
 class my_UNet(base_UNet):
     def __init__(self, layers_dict=None, create_model=True, z_images=None, tensor_input=None,
                  out_classes=2, is_2D=False, save_memory=False, mask_output=False, image_size=None,
-                 custom_loss=None, mask_loss=False, concat_not_add=True, explicit=False):
-        self.explicit = explicit
+                 custom_loss=None, mask_loss=False, concat_not_add=True, explictly_defined=False):
         self.mask_loss = mask_loss
         self.custom_loss = custom_loss
         self.tensor_input = tensor_input
@@ -601,7 +602,8 @@ class my_UNet(base_UNet):
         assert layers_dict is not None, 'Need to pass a layers dictionary'
         self.is_2D = is_2D
         self.create_model = create_model
-        super().__init__(layers_dict=layers_dict, is_2D=is_2D, save_memory=save_memory, concat_not_add=concat_not_add)
+        super().__init__(layers_dict=layers_dict, is_2D=is_2D, save_memory=save_memory, concat_not_add=concat_not_add,
+                         explictly_defined=explictly_defined)
         self.out_classes = out_classes
         self.mask_output = mask_output
         self.get_unet(layers_dict)
