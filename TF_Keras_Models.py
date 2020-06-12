@@ -238,10 +238,10 @@ def basic_dense_net(layers=1, filters=12, growth_rate=6, conv_lambda=0, num_conv
 
     layers_dict = return_hollow_layers_dict(layers)
     previous_name = 'start'
-    encoding_layers = []
-    encoding_filters = []
+    encoding_names = []
+    layers_encoding = []
     for layer in range(layers - 1):
-        encoding_layers.append(layer)
+        layers_encoding.append(layer)
         if layer == 0:
             layers_dict['Layer_' + str(layer)]['Encoding'] = start
         else:
@@ -257,13 +257,15 @@ def basic_dense_net(layers=1, filters=12, growth_rate=6, conv_lambda=0, num_conv
             encoding += [lc.concat_layer(names)]
             names = names[:]
             filters += growth_rate
-        encoding_filters.append(filters)
+        encoding_names.append(names)
         layers_dict['Layer_' + str(layer)]['Encoding'] += encoding
         previous_name = 'Layer_{}_Down'.format(layer)
-        layers_dict['Layer_' + str(layer)]['Pooling']['Encoding'] = lc.convolution_layer(filters, strides=pool,
-                                                                                         activation=None,
-                                                                                         batch_norm=False,
-                                                                                         out_name=previous_name)
+        filters *= 2
+        layers_dict['Layer_' + str(layer)]['Pooling']['Encoding'] = [
+            lc.activation_layer('elu'), lc.batch_norm_layer(),
+            block(filters, kernel=(1, 1, 1), batch_norm=True, activation='elu'),
+            lc.convolution_layer(filters, strides=pool, activation=None, batch_norm=False, out_name=previous_name)
+        ]
         num_conv_blocks += conv_lambda
         num_conv_blocks = min([num_conv_blocks, max_conv_blocks])
     # We want the filter number to still grow by growth_factor, so add in the decoding side later...
@@ -280,21 +282,23 @@ def basic_dense_net(layers=1, filters=12, growth_rate=6, conv_lambda=0, num_conv
         filters += growth_rate
     layers_dict['Base'] = encoding
     num_conv_blocks = num_conv_blocks_base
-    for layer in encoding_layers[::-1]:
-        filters = encoding_filters[layer]
+    for layer in layers_encoding[::-1]:
         up_name = 'Layer_{}_Up'.format(layer)
-        layers_dict['Layer_' + str(layer)]['Pooling']['Decoding'] = [lc.upsampling_layer(pool_size=pool),
-                                                                     lc.convolution_layer(filters, activation=None,
-                                                                                          batch_norm=False,
-                                                                                          out_name=up_name)]
+        layers_dict['Layer_' + str(layer)]['Pooling']['Decoding'] = [
+            lc.activation_layer('elu'), lc.batch_norm_layer(),
+            block(filters, kernel=(1, 1, 1), batch_norm=True, activation='elu'),
+            lc.upsampling_layer(pool_size=pool),
+            lc.convolution_layer(filters, activation=None, batch_norm=False, out_name=up_name)
+        ]
         layers_dict['Layer_' + str(layer)]['Decoding'] = []
         encoding = []
         names = [up_name]
+        names += encoding_names[layer]
         for i in range(num_conv_blocks):
             name = 'Layer_{}_Conv_Decoding_{}'.format(layer, i)
             names.append(name)
             encoding += [lc.activation_layer('elu'), lc.batch_norm_layer(),
-                         block(filters, kernel=(1, 1, 1), batch_norm=True, activation='elu'),
+                         block(filters, kernel=(1,1,1), batch_norm=True, activation='elu'),
                          block(filters, batch_norm=False, activation=None, out_name=name)]
             encoding += [lc.concat_layer(names)]
             names = names[:]
@@ -302,6 +306,7 @@ def basic_dense_net(layers=1, filters=12, growth_rate=6, conv_lambda=0, num_conv
         layers_dict['Layer_' + str(layer)]['Decoding'] = encoding
         num_conv_blocks += conv_lambda
         num_conv_blocks = min([num_conv_blocks, max_conv_blocks])
+        filters = filters // 2
     final_steps = [lc.activation_layer('elu'), lc.batch_norm_layer(),
                    block(filters, kernel=(1, 1, 1), batch_norm=True, activation='elu'),
                    lc.convolution_layer(num_classes, batch_norm=False, activation='softmax')]
