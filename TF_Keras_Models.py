@@ -179,6 +179,20 @@ class Return_Layer_Functions(object):
                         'padding':padding, 'bn_before_activation':bn_before_activation, 'out_name':out_name, 'inputs':inputs}}
         return block
 
+    def dense_layer(self, units, drop_out=None, activation=None, batch_norm=None, inputs=None, out_name=None, **kwargs):
+        '''
+        :param units: dimensionality of output space
+        :param drop_out: float 0-1., fraction of inputs to drop. 1 drops all
+        :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
+        :param batch_norm: perform batch_norm after activation
+        :param out_name: name given to output for dictionary, allows post-usage
+        :param inputs: can give a name for it to come in from
+        :return:
+        '''
+        dense = {'dense':{'units':units, 'drop_out':drop_out, 'activation':activation, 'batch_norm':batch_norm,
+                          'inputs':inputs, 'out_name':out_name}}
+        return dense
+
     def residual_layer(self, submodules, batch_norm=False, activation=None, bn_before_activation=None, **kwargs):
         '''
         :param submodules: dictionary or list collection you want a residual connection across
@@ -545,31 +559,20 @@ class Unet(object):
         x = self.return_activation(activation)(name=name + '_activation')(x)
         return x
 
-    def dict_block(self, x, name=None, **kwargs):
-        conv_func = self.conv
-        if 'residual' in kwargs:
-            x = self.residual_block(x, name, **kwargs['residual'])
-        elif 'concat' in kwargs:
-            x = self.concat_block(name, **kwargs['concat'])
-        elif 'batch_norm' in kwargs:
+    def dense_block(self, x, units=None, name=None, activation=None, batch_norm=False, out_name=None, inputs=None,
+                    drop_out=None, **kwargs):
+        if inputs is not None:
+            x = self.layers_dict[inputs]
+        assert units is not None, "Need to provide the number of units for a dense connection block"
+        if drop_out is not None:
+            x = Dropout(drop_out)(x)
+        x = Dense(units=units)(x)
+        if activation is not None:
+            x = self.return_activation(activation)(name='Activation_{}'.format(name))(x)
+        if batch_norm:
             x = BatchNormalization()(x)
-        elif 'transpose' in kwargs:
-            conv_func = self.tranpose_conv
-            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
-        elif 'convolution' in kwargs:
-            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['convolution'])
-        elif 'atrous' in kwargs:
-            x = self.atrous_block(x, name=name, **kwargs['atrous'])
-        elif 'pooling' in kwargs:
-            x = self.pooling_block(x, name=name, **kwargs['pooling'])
-        elif 'upsampling' in kwargs:
-            x = self.upsampling_block(x, name=name, **kwargs['upsampling'])
-        elif 'activation' in kwargs:
-            x = self.return_activation(kwargs['activation'])(name='Activation_{}_{}'.format(kwargs['activation'],name))(x)
-        elif 'custom' in kwargs:
-            x = kwargs['custom'](x)
-        else:
-            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs)
+        if out_name is not None:
+            self.layer_vals[out_name] = x
         return x
 
     def conv_block(self, x, channels=None, kernel=None, name=None, strides=None, dialation_rate=1, conv_func=None,
@@ -596,6 +599,33 @@ class Unet(object):
                 x = BatchNormalization()(x)
         if out_name is not None:
             self.layer_vals[out_name] = x
+        return x
+
+    def dict_block(self, x, name=None, **kwargs):
+        conv_func = self.conv
+        if 'residual' in kwargs:
+            x = self.residual_block(x, name, **kwargs['residual'])
+        elif 'concat' in kwargs:
+            x = self.concat_block(name, **kwargs['concat'])
+        elif 'batch_norm' in kwargs:
+            x = BatchNormalization()(x)
+        elif 'transpose' in kwargs:
+            conv_func = self.tranpose_conv
+            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['transpose'])
+        elif 'convolution' in kwargs:
+            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs['convolution'])
+        elif 'atrous' in kwargs:
+            x = self.atrous_block(x, name=name, **kwargs['atrous'])
+        elif 'pooling' in kwargs:
+            x = self.pooling_block(x, name=name, **kwargs['pooling'])
+        elif 'upsampling' in kwargs:
+            x = self.upsampling_block(x, name=name, **kwargs['upsampling'])
+        elif 'activation' in kwargs:
+            x = self.return_activation(kwargs['activation'])(name='Activation_{}_{}'.format(kwargs['activation'],name))(x)
+        elif 'custom' in kwargs:
+            x = kwargs['custom'](x)
+        else:
+            x = self.conv_block(x, conv_func=conv_func, name=name, **kwargs)
         return x
 
     def run_filter_dict(self, x, layer_dict, layer, desc):
