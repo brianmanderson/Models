@@ -540,7 +540,7 @@ class Unet(object):
         if inputs is not None:
             x = self.layer_vals[inputs]
         if shape_name is not None:
-            out_shape = self.layer_vals[shape_name].shape
+            out_shape = self.layer_vals[shape_name].shape[1:]
         x = Reshape(out_shape, name='Reshape_'.format(name))(x)
         if out_name is not None:
             self.layer_vals[out_name] = x
