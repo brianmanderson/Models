@@ -182,11 +182,12 @@ class Return_Layer_Functions(object):
     def flatten_layer(self, inputs=None, out_name=None):
         return {'flatten':{'inputs':inputs, 'out_name':out_name}}
 
-    def reshape_layer(self, shape=None, inputs=None, out_name=None):
-        assert shape is not None or inputs is not None, 'Need to provide a shape or an inputs name to find shape'
-        return {'reshape':{'shape':shape,'inputs':inputs, 'out_name':out_name}}
+    def reshape_layer(self, shape=None, shape_name=None, inputs=None, out_name=None):
+        assert shape is not None or shape_name is not None, 'Need to provide a shape or an inputs name to find shape'
+        return {'reshape':{'shape':shape,'shape_name':None,'inputs':inputs, 'out_name':out_name}}
 
-    def dense_layer(self, units, drop_out=None, activation=None, batch_norm=None, inputs=None, out_name=None, **kwargs):
+    def dense_layer(self, units=None, drop_out=None, activation=None, batch_norm=None, inputs=None, out_name=None,
+                    units_by_shape=None, **kwargs):
         '''
         :param units: dimensionality of output space
         :param drop_out: float 0-1., fraction of inputs to drop. 1 drops all
@@ -196,8 +197,9 @@ class Return_Layer_Functions(object):
         :param inputs: can give a name for it to come in from
         :return:
         '''
+        assert units is not None or units_by_shape is not None, "Need to provide units, or a name to base units off of"
         dense = {'dense':{'units':units, 'drop_out':drop_out, 'activation':activation, 'batch_norm':batch_norm,
-                          'inputs':inputs, 'out_name':out_name}}
+                          'inputs':inputs, 'out_name':out_name, 'units_by_shape':units_by_shape}}
         return dense
 
     def residual_layer(self, submodules, batch_norm=False, activation=None, bn_before_activation=None, **kwargs):
@@ -480,13 +482,15 @@ class Unet(object):
         x = self.return_activation(activation)(name=name + '_activation')(x)
         return x
 
-    def dense_block(self, x, units=None, name=None, activation=None, batch_norm=False, out_name=None, inputs=None,
-                    drop_out=None, **kwargs):
+    def dense_block(self, x, name=None, units=None, activation=None, batch_norm=False, out_name=None, inputs=None,
+                    drop_out=None, units_by_shape=None, **kwargs):
         if inputs is not None:
-            x = self.layers_dict[inputs]
+            x = self.layer_vals[inputs]
         assert units is not None, "Need to provide the number of units for a dense connection block"
         if drop_out is not None:
             x = Dropout(drop_out)(x)
+        if units_by_shape is not None:
+            units = tf.multiply(self.layer_vals[out_name].shape)
         x = Dense(units=units)(x)
         if activation is not None:
             x = self.return_activation(activation)(name='Activation_{}'.format(name))(x)
@@ -524,15 +528,17 @@ class Unet(object):
 
     def flatten_block(self, x, name=None, out_name=None, inputs=None, **kwargs):
         if inputs is not None:
-            x = self.layers_dict[inputs]
+            x = self.layer_vals[inputs]
         x = Flatten(name='Flatten_'.format(name))(x)
         if out_name is not None:
             self.layer_vals[out_name] = x
         return x
 
-    def reshape_block(self, x, name, shape=None, inputs=None, out_name=None, **kwargs):
+    def reshape_block(self, x, name, shape=None, shape_name=None, inputs=None, out_name=None, **kwargs):
         out_shape = shape
         if inputs is not None:
+            x = self.layer_vals[inputs]
+        if shape_name is not None:
             out_shape = self.layer_vals[inputs].shape
         x = Reshape(out_shape, name='Reshape_'.format(name))(x)
         if out_name is not None:
@@ -542,13 +548,15 @@ class Unet(object):
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
         if 'residual' in kwargs:
-            x = self.residual_block(x, name, **kwargs['residual'])
+            x = self.residual_block(x, name=name, **kwargs['residual'])
         elif 'dense' in kwargs:
-            x = self.dense_block(x, name, **kwargs['residual'])
+            x = self.dense_block(x, name=name, **kwargs['dense'])
+        elif 'reshape' in kwargs:
+            x = self.reshape_block(x, name=name,**kwargs['reshape'])
         elif 'flatten' in kwargs:
-            x = self.flatten_block(x, name, **kwargs['flatten'])
+            x = self.flatten_block(x, name=name, **kwargs['flatten'])
         elif 'concat' in kwargs:
-            x = self.concat_block(name, **kwargs['concat'])
+            x = self.concat_block(name=name, **kwargs['concat'])
         elif 'batch_norm' in kwargs:
             x = BatchNormalization()(x)
         elif 'transpose' in kwargs:
