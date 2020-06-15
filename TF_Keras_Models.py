@@ -179,6 +179,13 @@ class Return_Layer_Functions(object):
                         'padding':padding, 'bn_before_activation':bn_before_activation, 'out_name':out_name, 'inputs':inputs}}
         return block
 
+    def flatten_layer(self, inputs=None, out_name=None):
+        return {'flatten':{'inputs':inputs, 'out_name':out_name}}
+
+    def reshape_layer(self, shape=None, inputs=None, out_name=None):
+        assert shape is not None or inputs is not None, 'Need to provide a shape or an inputs name to find shape'
+        return {'reshape':{'shape':shape,'inputs':inputs, 'out_name':out_name}}
+
     def dense_layer(self, units, drop_out=None, activation=None, batch_norm=None, inputs=None, out_name=None, **kwargs):
         '''
         :param units: dimensionality of output space
@@ -515,10 +522,31 @@ class Unet(object):
             self.layer_vals[out_name] = x
         return x
 
+    def flatten_block(self, x, name=None, out_name=None, inputs=None, **kwargs):
+        if inputs is not None:
+            x = self.layers_dict[inputs]
+        x = Flatten(name='Flatten_'.format(name))(x)
+        if out_name is not None:
+            self.layer_vals[out_name] = x
+        return x
+
+    def reshape_block(self, x, name, shape=None, inputs=None, out_name=None, **kwargs):
+        out_shape = shape
+        if inputs is not None:
+            out_shape = self.layer_vals[inputs].shape
+        x = Reshape(out_shape, name='Reshape_'.format(name))(x)
+        if out_name is not None:
+            self.layer_vals[out_name] = x
+        return x
+
     def dict_block(self, x, name=None, **kwargs):
         conv_func = self.conv
         if 'residual' in kwargs:
             x = self.residual_block(x, name, **kwargs['residual'])
+        elif 'dense' in kwargs:
+            x = self.dense_block(x, name, **kwargs['residual'])
+        elif 'flatten' in kwargs:
+            x = self.flatten_block(x, name, **kwargs['flatten'])
         elif 'concat' in kwargs:
             x = self.concat_block(name, **kwargs['concat'])
         elif 'batch_norm' in kwargs:
