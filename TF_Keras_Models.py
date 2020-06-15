@@ -184,7 +184,7 @@ class Return_Layer_Functions(object):
 
     def reshape_layer(self, shape=None, shape_name=None, inputs=None, out_name=None):
         assert shape is not None or shape_name is not None, 'Need to provide a shape or an inputs name to find shape'
-        return {'reshape':{'shape':shape,'shape_name':None,'inputs':inputs, 'out_name':out_name}}
+        return {'reshape':{'shape':shape,'shape_name':shape_name,'inputs':inputs, 'out_name':out_name}}
 
     def dense_layer(self, units=None, drop_out=None, activation=None, batch_norm=None, inputs=None, out_name=None,
                     units_by_shape=None, **kwargs):
@@ -486,11 +486,12 @@ class Unet(object):
                     drop_out=None, units_by_shape=None, **kwargs):
         if inputs is not None:
             x = self.layer_vals[inputs]
-        assert units is not None, "Need to provide the number of units for a dense connection block"
+        assert units is not None or units_by_shape is not None, "Need to provide the number of units for a " \
+                                                                "dense connection block or an input to model"
         if drop_out is not None:
             x = Dropout(drop_out)(x)
         if units_by_shape is not None:
-            units = tf.multiply(self.layer_vals[out_name].shape)
+            units = tf.reduce_prod(self.layer_vals[units_by_shape].shape[1:])
         x = Dense(units=units)(x)
         if activation is not None:
             x = self.return_activation(activation)(name='Activation_{}'.format(name))(x)
@@ -539,7 +540,7 @@ class Unet(object):
         if inputs is not None:
             x = self.layer_vals[inputs]
         if shape_name is not None:
-            out_shape = self.layer_vals[inputs].shape
+            out_shape = self.layer_vals[shape_name].shape
         x = Reshape(out_shape, name='Reshape_'.format(name))(x)
         if out_name is not None:
             self.layer_vals[out_name] = x
