@@ -6,11 +6,141 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import *
 from functools import partial, update_wrapper
 import tensorflow as tf
+from tensorflow.python.keras.losses import LossFunctionWrapper, losses_utils, ops, math_ops, array_ops, smart_cond
+from tensorflow.python.keras.backend import nn, _backtrack_identity, variables_module, variable, _constant_to_tensor, clip_ops, epsilon
 # SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD())
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
 SqueezeDimension = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
 Subtract_new = lambda y: Lambda(lambda x: Subtract()([x, y]))
 Multipy_new = lambda y: Lambda(lambda x: Multiply()([x, y]))
+
+
+class WeightedCategoricalCrossentropy(LossFunctionWrapper):
+    def __init__(self, weights, from_logits=False, label_smoothing=0, reduction=losses_utils.ReductionV2.AUTO,
+                 name='weighted_categorical_crossentropy'):
+        self.weights = weights
+        weights = variable(weights)
+
+        def weighted_keras_categorical_crossentropy(target, output, from_logits=False, axis=-1):
+            target.shape.assert_is_compatible_with(output.shape)
+            if from_logits:
+                return nn.softmax_cross_entropy_with_logits_v2(labels=target, logits=output, axis=axis)
+            if not isinstance(output, (ops.EagerTensor, variables_module.Variable)):
+                output = _backtrack_identity(output)
+                if output.op.type == 'Softmax':
+                    # When softmax activation function is used for output operation, we
+                    # use logits from the softmax function directly to compute loss in order
+                    # to prevent collapsing zero when training.
+                    # See b/117284466
+                    assert len(output.op.inputs) == 1
+                    output = output.op.inputs[0]
+                    return nn.softmax_cross_entropy_with_logits_v2(labels=target, logits=output, axis=axis)
+            # scale preds so that the class probas of each sample sum to 1
+            output = output / math_ops.reduce_sum(output, axis, True)
+            # Compute cross entropy from probabilities.
+            epsilon_ = _constant_to_tensor(epsilon(), output.dtype.base_dtype)
+            output = clip_ops.clip_by_value(output, epsilon_, 1. - epsilon_)
+            return -math_ops.reduce_sum(target * math_ops.log(output)*weights, axis)
+
+        def weighted_categorical_crossentropy(y_true, y_pred, from_logits=False, label_smoothing=0):
+            y_pred = ops.convert_to_tensor_v2(y_pred)
+            y_true = math_ops.cast(y_true, y_pred.dtype)
+            label_smoothing = ops.convert_to_tensor_v2(label_smoothing, dtype=K.floatx())
+
+            def _smooth_labels():
+                num_classes = math_ops.cast(array_ops.shape(y_true)[1], y_pred.dtype)
+                return y_true * (1.0 - label_smoothing) + (label_smoothing / num_classes)
+
+            y_true = smart_cond.smart_cond(label_smoothing, _smooth_labels, lambda: y_true)
+
+            return weighted_keras_categorical_crossentropy(y_true, y_pred, from_logits=from_logits)
+
+        super(WeightedCategoricalCrossentropy, self).__init__(weighted_categorical_crossentropy, name=name, reduction=reduction,
+                                                              from_logits=from_logits, label_smoothing=label_smoothing)
+
+
+def categorical_crossentropy(y_true, y_pred, from_logits=False, label_smoothing=0):
+    """Computes the categorical crossentropy loss.
+
+    Usage:
+
+    >>> y_true = [[0, 1, 0], [0, 0, 1]]
+    >>> y_pred = [[0.05, 0.95, 0], [0.1, 0.8, 0.1]]
+    >>> loss = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
+    >>> assert loss.shape == (2,)
+    >>> loss.numpy()
+    array([0.0513, 2.303], dtype=float32)
+
+    Args:
+    y_true: Tensor of one-hot true targets.
+    y_pred: Tensor of predicted targets.
+    from_logits: Whether `y_pred` is expected to be a logits tensor. By default,
+      we assume that `y_pred` encodes a probability distribution.
+    label_smoothing: Float in [0, 1]. If > `0` then smooth the labels.
+
+    Returns:
+    Categorical crossentropy loss value.
+    """
+    y_pred = ops.convert_to_tensor_v2(y_pred)
+    y_true = math_ops.cast(y_true, y_pred.dtype)
+    label_smoothing = ops.convert_to_tensor_v2(label_smoothing, dtype=K.floatx())
+
+    def _smooth_labels():
+        num_classes = math_ops.cast(array_ops.shape(y_true)[1], y_pred.dtype)
+        return y_true * (1.0 - label_smoothing) + (label_smoothing / num_classes)
+
+    y_true = smart_cond.smart_cond(label_smoothing, _smooth_labels, lambda: y_true)
+
+    return keras_categorical_crossentropy(y_true, y_pred, from_logits=from_logits)
+
+
+def keras_categorical_crossentropy(target, output, from_logits=False, axis=-1):
+    target.shape.assert_is_compatible_with(output.shape)
+    if from_logits:
+        return nn.softmax_cross_entropy_with_logits_v2(labels=target, logits=output, axis=axis)
+    if not isinstance(output, (ops.EagerTensor, variables_module.Variable)):
+        output = _backtrack_identity(output)
+        if output.op.type == 'Softmax':
+            # When softmax activation function is used for output operation, we
+            # use logits from the softmax function directly to compute loss in order
+            # to prevent collapsing zero when training.
+            # See b/117284466
+            assert len(output.op.inputs) == 1
+            output = output.op.inputs[0]
+            return nn.softmax_cross_entropy_with_logits_v2(labels=target, logits=output, axis=axis)
+    # scale preds so that the class probas of each sample sum to 1
+    output = output / math_ops.reduce_sum(output, axis, True)
+    # Compute cross entropy from probabilities.
+    epsilon_ = _constant_to_tensor(epsilon(), output.dtype.base_dtype)
+    output = clip_ops.clip_by_value(output, epsilon_, 1. - epsilon_)
+    return -math_ops.reduce_sum(target * math_ops.log(output), axis)
+
+
+def weighted_categorical_crossentropy(weights):
+    """
+    A weighted version of keras.objectives.categorical_crossentropy
+
+    Variables:
+        weights: numpy array of shape (C,) where C is the number of classes
+
+    Usage:
+        weights = np.array([0.5,2,10]) # Class one at 0.5, class 2 twice the normal weights, class 3 10x.
+        loss = weighted_categorical_crossentropy(weights)
+        model.compile(loss=loss,optimizer='adam')
+    """
+
+    weights = K.variable(weights)
+
+    def loss(y_true, y_pred):
+        # scale predictions so that the class probas of each sample sum to 1
+        y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
+        # clip to prevent NaN's and Inf's
+        y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
+        # calc
+        loss = y_true * K.log(y_pred) * weights
+        loss = -K.sum(loss, -1)
+        return loss
+    return loss
 
 
 def return_hollow_layers_dict(layers=3):
@@ -32,7 +162,7 @@ def return_hollow_layers_dict(layers=3):
 
 class Return_Layer_Functions(object):
     def __init__(self, kernel=None, strides=None, padding=None, batch_norm=None, pool_size=None,
-                 pooling_type=None, bn_before_activation=True):
+                 pooling_type=None, bn_before_activation=False):
         '''
         You can define any defaults here
         :param kernel: (3,3)
@@ -146,7 +276,7 @@ class Return_Layer_Functions(object):
         return {'input':input_shape, 'out_name':out_name}
 
     def convolution_layer(self, channels, type='convolution', kernel=None, activation=None, batch_norm=None, strides=None,
-                          dialation_rate=1, padding='same', bn_before_activation=None, inputs=None, out_name=None, **kwargs):
+                          dialation_rate=1, padding='same', bn_before_activation=False, inputs=None, out_name=None, **kwargs):
         '''
         :param type: 'convolution' or 'tranpose'
         :param channels: # of channels
