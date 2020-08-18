@@ -7,7 +7,7 @@ from tensorflow.keras.layers import *
 from functools import partial, update_wrapper
 import tensorflow as tf
 from tensorflow.python.keras.losses import LossFunctionWrapper, losses_utils, ops, math_ops, array_ops, smart_cond
-from tensorflow.python.keras.backend import nn, _backtrack_identity, variables_module, variable, _constant_to_tensor, clip_ops, epsilon
+from tensorflow.python.keras.backend import nn, variables_module, variable, _constant_to_tensor, clip_ops, epsilon
 # SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD())
 ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
 SqueezeDimension = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
@@ -26,7 +26,8 @@ class WeightedCategoricalCrossentropy(LossFunctionWrapper):
             if from_logits:
                 return nn.softmax_cross_entropy_with_logits_v2(labels=target, logits=output, axis=axis)
             if not isinstance(output, (ops.EagerTensor, variables_module.Variable)):
-                output = _backtrack_identity(output)
+                while output.op.type == 'Identity':
+                    output = output.op.inputs[0]
                 if output.op.type == 'Softmax':
                     # When softmax activation function is used for output operation, we
                     # use logits from the softmax function directly to compute loss in order
