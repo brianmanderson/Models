@@ -812,7 +812,7 @@ class my_UNet(base_UNet):
             image_input_primary = x = self.tensor_input
         x = self.run_unet(x)
         if self.mask_loss or self.mask_output:
-            mask = Input(shape=(None, None, None, 1), name='mask', dtype='int32')
+            mask = Input(shape=self.image_size[:-1] + (1,), name='mask', dtype='int32')
             inputs = [image_input_primary, mask]
             sum_vals_base = tf.where(mask > 0, 0, 1)
             zeros = tf.where(mask > 0, 0, 0)
