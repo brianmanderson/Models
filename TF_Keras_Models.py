@@ -9,8 +9,24 @@ import tensorflow as tf
 from tensorflow.python.keras.losses import LossFunctionWrapper, losses_utils, ops, math_ops, array_ops, smart_cond
 from tensorflow.python.keras.backend import nn, variables_module, variable, _constant_to_tensor, clip_ops, epsilon
 # SGD = tf.train.experimental.enable_mixed_precision_graph_rewrite(SGD())
-ExpandDimension = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
-SqueezeDimension = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
+
+
+def ExpandDimension(axis):
+    import tensorflow.keras.backend as K
+    def expanddimension(x):
+        return K.expand_dims(x, axis)
+    return expanddimension
+
+
+def SqueezeDimension(axis):
+    import tensorflow.keras.backend as K
+    def squeezedimension(x):
+        return K.squeeze(x, axis)
+    return squeezedimension
+
+# x = layers.Lambda(SqueezeDimension(axis=0))(x)
+ExpandDimension_old = lambda axis: Lambda(lambda x: K.expand_dims(x, axis))
+SqueezeDimension_old = lambda axis: Lambda(lambda x: K.squeeze(x, axis))
 Subtract_new = lambda y: Lambda(lambda x: Subtract()([x, y]))
 Multipy_new = lambda y: Lambda(lambda x: Multiply()([x, y]))
 
@@ -812,15 +828,15 @@ class my_UNet(base_UNet):
             image_input_primary = x = self.tensor_input
         if self.mask_loss or self.mask_output:
             mask = Input(shape=self.image_size[:-1] + (1,), name='mask', dtype='int32')
-            x = Concatenate(name='InputConcat')([x, mask])
-        x = self.run_unet(x)
-        if self.mask_loss or self.mask_output:
+            x = Concatenate(name='InputConcat')([x, K.cast(mask, 'float32')])
             inputs = [image_input_primary, mask]
             sum_vals_base = tf.where(mask > 0, 0, 1)
             zeros = tf.where(mask > 0, 0, 0)
             zeros = tf.repeat(zeros, repeats=self.out_classes-1, axis=-1)
             mask = tf.repeat(mask, repeats=self.out_classes, axis=-1)
             sum_vals = tf.concat([sum_vals_base, zeros], axis=-1)
+        x = self.run_unet(x)
+        if self.mask_loss or self.mask_output:
             if self.mask_loss:
                 assert self.custom_loss is not None, 'Need to specify a custom loss when using masked input'
                 partial_func = partial(self.custom_loss, mask=mask)
