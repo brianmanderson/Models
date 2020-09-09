@@ -34,6 +34,7 @@ class BreakUpSqueezeDimensions(tf.keras.layers.Layer):
                                                input.shape[-1]])
         return x5d
 
+
 class SqueezeAxes(tf.keras.layers.Layer):
     def __init__(self):
         super(SqueezeAxes, self).__init__()
