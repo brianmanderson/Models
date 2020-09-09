@@ -24,6 +24,26 @@ class SqueezeDimension(tf.keras.layers.Layer):
         return K.squeeze(input, self.axis)
 
 
+class BreakUpSqueezeDimensions(tf.keras.layers.Layer):
+    def __init__(self, original_tensor):
+        super(BreakUpSqueezeDimensions, self).__init__()
+        self.og_shape = tf.keras.backend.shape(original_tensor)  # get dynamic tensor shape
+
+    def call(self, input, **kwargs):
+        x5d = tf.keras.backend.reshape(input, [self.og_shape[0], self.og_shape[1], self.og_shape[2], self.og_shape[3],
+                                               input.shape[-1]])
+        return x5d
+
+class SqueezeAxes(tf.keras.layers.Layer):
+    def __init__(self):
+        super(SqueezeAxes, self).__init__()
+
+    def call(self, input, **kwargs):
+        shape = tf.keras.backend.shape(input)  # get dynamic tensor shape
+        x5d = tf.keras.backend.reshape(input, [shape[0] * shape[1], shape[2], shape[3], 1])
+        return x5d
+
+
 class WeightedCategoricalCrossentropy(LossFunctionWrapper):
     def __init__(self, weights, from_logits=False, label_smoothing=0, reduction=losses_utils.ReductionV2.AUTO,
                  name='weighted_categorical_crossentropy'):
