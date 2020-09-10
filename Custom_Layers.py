@@ -23,26 +23,32 @@ class SqueezeDimension(tf.keras.layers.Layer):
     def call(self, input, **kwargs):
         return K.squeeze(input, self.axis)
 
+    def get_config(self):
+        config = {'axis': self.axis}
+        base_config = super(SqueezeDimension, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
-class BreakUpSqueezeDimensions(tf.keras.layers.Layer):
-    def __init__(self, original_tensor):
-        super(BreakUpSqueezeDimensions, self).__init__()
-        self.og_shape = tf.keras.backend.shape(original_tensor)  # get dynamic tensor shape
 
-    def call(self, input, **kwargs):
-        x5d = tf.keras.backend.reshape(input, [self.og_shape[0], self.og_shape[1], self.og_shape[2], self.og_shape[3],
-                                               input.shape[-1]])
-        return x5d
+def BreakUpSqueezeDimensions(image, og_image):
+    og_shape = tf.shape(og_image)
+    filters = image.shape[-1]
+    image = tf.reshape(image, [og_shape[0], og_shape[1], og_shape[2], og_shape[3], filters])
+    return image
 
 
 class SqueezeAxes(tf.keras.layers.Layer):
     def __init__(self):
         super(SqueezeAxes, self).__init__()
 
-    def call(self, input, **kwargs):
-        shape = tf.keras.backend.shape(input)  # get dynamic tensor shape
-        x5d = tf.keras.backend.reshape(input, [shape[0] * shape[1], shape[2], shape[3], 1])
-        return x5d
+    def call(self, x, **kwargs):
+        og_shape = tf.shape(x)
+        x = tf.reshape(x, [og_shape[0] * og_shape[1], og_shape[2], og_shape[3], 1])
+        return x
+
+    def get_config(self):
+        config = {}
+        base_config = super(SqueezeAxes, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 class WeightedCategoricalCrossentropy(LossFunctionWrapper):
