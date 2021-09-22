@@ -546,7 +546,7 @@ class Unet(object):
                 if type(activation) is list:
                     if activation[i] not in [None,'linear']:
                         x = self.return_activation(activation[i])(name=name + '_activation_{}'.format(i))(x)
-                elif activation is not 'linear':
+                elif activation != 'linear':
                     x = self.return_activation(activation)(name=name + '_activation_{}'.format(i))(x)
             if batch_norm:
                 if not bn_before_activation:
