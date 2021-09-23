@@ -269,9 +269,10 @@ class Return_Layer_Functions(object):
         assert strides is not None, 'Need to provide strides, or set a default'
         assert padding is not None, 'Need to provide padding, or set a default'
         assert batch_norm is not None, 'Need to provide batch_norm, or set a default'
-        block = {type: {'channels':channels, 'kernel':kernel, 'activation':activation,
-                        'batch_norm':batch_norm, 'strides':strides, 'dialation_rate':dialation_rate,
-                        'padding':padding, 'bn_before_activation':bn_before_activation, 'out_name':out_name, 'inputs':inputs}}
+        block = {type: {'channels': channels, 'kernel': kernel, 'activation': self.activation_layer(activation),
+                        'batch_norm': batch_norm, 'strides': strides, 'dialation_rate': dialation_rate,
+                        'padding': padding, 'bn_before_activation': bn_before_activation, 'out_name': out_name,
+                        'inputs': inputs}}
         return block
 
     def flatten_layer(self, inputs=None, out_name=None):
@@ -314,11 +315,14 @@ class Return_Layer_Functions(object):
         return {'concat':{'out_name':out_name, 'inputs':inputs}}
 
     def activation_layer(self, activation):
-        '''
+        """
         :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
         :return:
-        '''
-        return {'activation':activation}
+        """
+        out_activation = {'activation': activation}
+        if activation == 'softmax':
+            out_activation['dtype'] = 'float32'
+        return out_activation
 
     def pooling_layer(self, pool_size=None, pooling_type=None):
         '''
