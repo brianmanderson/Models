@@ -319,9 +319,12 @@ class Return_Layer_Functions(object):
         :param activation: activation, ['relu','elu','linear','exponential','hard_sigmoid','sigmoid','tanh','softmax']
         :return:
         """
-        out_activation = {'activation': activation}
-        if activation == 'softmax':
-            out_activation['dtype'] = 'float32'
+        if activation is None:
+            out_activation = {'activation': 'linear'}
+        else:
+            out_activation = {'activation': activation}
+            if activation == 'softmax':
+                out_activation['dtype'] = 'float32'
         return out_activation
 
     def pooling_layer(self, pool_size=None, pooling_type=None):
@@ -473,10 +476,7 @@ class Unet(object):
         if type(activation) is str and activation.lower() in normal_activations:
             self.activation = partial(Activation, activation)
         elif type(activation) is dict:
-            if 'kwargs' in activation:
-                self.activation = partial(activation['activation'], **activation['kwargs'])
-            else:
-                self.activation = partial(activation['activation'])
+            self.activation = partial(Activation, **activation)
         else:
             self.activation = activation
 
@@ -487,10 +487,7 @@ class Unet(object):
         elif activation is None:
             activation = partial(Activation, 'linear')
         elif type(activation) is dict:
-            if 'kwargs' in activation:
-                activation = partial(activation['activation'], **activation['kwargs'])
-            else:
-                activation = partial(activation['activation'])
+            activation = partial(Activation, **activation)
         else:
             activation = activation
         return activation
